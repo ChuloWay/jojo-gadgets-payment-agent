@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: gadget_agent
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gadget_agent"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    volumes:
+      - gadget_agent_postgres:/var/lib/postgresql/data
+
+volumes:
+  gadget_agent_postgres:

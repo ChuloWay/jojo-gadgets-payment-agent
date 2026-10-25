@@ -1,0 +1,263 @@
+import pino from 'pino';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { seed } from '../src/db/seed.js';
+import { createPool } from '../src/db/pool.js';
+import type { PaystackInitializeData, PaystackVerifyData } from '../src/domain/types.js';
+import type { AttemptRecorder, PaymentProvider } from '../src/paystack/client.js';
+import { CommerceService } from '../src/services/commerce-service.js';
+import { createMcpServer } from '../src/mcp/server.js';
+
+const testDatabaseUrl = process.env.TEST_DATABASE_URL;
+const describeDatabase = testDatabaseUrl ? describe : describe.skip;
+
+class FakeProvider implements PaymentProvider {
+  initializeCalls = 0;
+  verifyCalls = 0;
+  initializeError: Error | undefined;
+  verifyByReference = new Map<string, PaystackVerifyData>();
+
+  async initialize(
+    input: { email: string; amountKobo: number; reference: string },
+    recordAttempt: AttemptRecorder
+  ): Promise<PaystackInitializeData> {
+    this.initializeCalls += 1;
+    await recordAttempt({ attempt: 1, httpStatus: 200, payload: { status: true } });
+    if (this.initializeError) throw this.initializeError;
+    return {
+      authorizationUrl: `https://checkout.paystack.test/${input.reference}`,
+      accessCode: `access-${input.reference}`,
+      reference: input.reference
+    };
+  }
+
+  async verify(reference: string, recordAttempt: AttemptRecorder): Promise<PaystackVerifyData> {
+    this.verifyCalls += 1;
+    await recordAttempt({ attempt: 1, httpStatus: 200, payload: { status: true } });
+    const result = this.verifyByReference.get(reference);
+    if (!result) throw new Error(`No fake verification configured for ${reference}`);
+    return result;
+  }
+}
+
+describeDatabase('CommerceService with PostgreSQL', () => {
+  const pool = createPool(testDatabaseUrl!);
+  const logger = pino({ level: 'silent' });
+
+  beforeEach(async () => {
+    await seed(testDatabaseUrl!);
+  });
+
+  afterAll(async () => {
+    await pool.end();
+  });
+
+  async function ps5Quote(service: CommerceService) {
+    const result = await service.checkStock({ query: 'PS5' });
+    expect(result.status).toBe('ok');
+    const match = (result.matches as Array<{ sku: string; quote_token: string }>)[0]!;
+    return match;
+  }
+
+  it('creates one checkout and reuses it for a duplicate request', async () => {
+    const provider = new FakeProvider();
+    const service = new CommerceService(pool, provider, 30, logger);
+    const quote = await ps5Quote(service);
+
+    const first = await service.createPayment({
+      sku: quote.sku,
+      quoteToken: quote.quote_token,
+      customerPhone: '+2348000000001',
+      customerName: 'Test Buyer'
+    });
+    const second = await service.createPayment({
+      sku: quote.sku,
+      quoteToken: quote.quote_token,
+      customerPhone: '+2348000000001',
+      customerName: 'Test Buyer'
+    });
+
+    expect(first.status).toBe('created');
+    expect(second.status).toBe('existing_pending');
+    expect(second.reference).toBe(first.reference);
+    expect(provider.initializeCalls).toBe(1);
+
+    const stock = await pool.query('SELECT qty_available, qty_held FROM skus WHERE sku = $1', [quote.sku]);
+    expect(stock.rows[0]).toMatchObject({ qty_available: 0, qty_held: 1 });
+  });
+
+  it('allows only one customer to reserve the last unit', async () => {
+    const provider = new FakeProvider();
+    const service = new CommerceService(pool, provider, 30, logger);
+    const quote = await ps5Quote(service);
+
+    const results = await Promise.all([
+      service.createPayment({ sku: quote.sku, quoteToken: quote.quote_token, customerPhone: '+2348000000011', customerName: 'Buyer One' }),
+      service.createPayment({ sku: quote.sku, quoteToken: quote.quote_token, customerPhone: '+2348000000022', customerName: 'Buyer Two' })
+    ]);
+
+    expect(results.map((result) => result.status).sort()).toEqual(['created', 'out_of_stock']);
+    expect(provider.initializeCalls).toBe(1);
+    const stock = await pool.query('SELECT qty_available, qty_held FROM skus WHERE sku = $1', [quote.sku]);
+    expect(stock.rows[0]).toMatchObject({ qty_available: 0, qty_held: 1 });
+  });
+
+  it('retains and reuses an initializing order after an ambiguous provider failure', async () => {
+    const provider = new FakeProvider();
+    provider.initializeError = new TypeError('connection closed after dispatch');
+    const service = new CommerceService(pool, provider, 30, logger);
+    const quote = await ps5Quote(service);
+    const input = {
+      sku: quote.sku,
+      quoteToken: quote.quote_token,
+      customerPhone: '+2348000000077',
+      customerName: 'Uncertain Buyer'
+    };
+
+    const first = await service.createPayment(input);
+    const second = await service.createPayment(input);
+
+    expect(first.status).toBe('payment_provider_error');
+    expect(second.status).toBe('payment_provider_error');
+    expect(second.reference).toBe(first.reference);
+    expect(provider.initializeCalls).toBe(1);
+    const stock = await pool.query('SELECT qty_available, qty_held FROM skus WHERE sku = $1', [quote.sku]);
+    expect(stock.rows[0]).toMatchObject({ qty_available: 0, qty_held: 1 });
+  });
+
+  it('marks a successful payment once when verification is repeated', async () => {
+    const provider = new FakeProvider();
+    const service = new CommerceService(pool, provider, 30, logger);
+    const quote = await ps5Quote(service);
+    const created = await service.createPayment({
+      sku: quote.sku,
+      quoteToken: quote.quote_token,
+      customerPhone: '+2348000000033',
+      customerName: 'Paid Buyer'
+    });
+    const reference = created.reference as string;
+    provider.verifyByReference.set(reference, {
+      status: 'success', reference, amount: 78_000_000, currency: 'NGN', domain: 'test'
+    });
+
+    const first = await service.verifyPayment(reference);
+    const second = await service.verifyPayment(reference);
+
+    expect(first).toMatchObject({ status: 'paid', already_confirmed: false });
+    expect(second).toMatchObject({ status: 'paid', already_confirmed: true });
+    expect(provider.verifyCalls).toBe(1);
+    const stock = await pool.query('SELECT qty_available, qty_held FROM skus WHERE sku = $1', [quote.sku]);
+    expect(stock.rows[0]).toMatchObject({ qty_available: 0, qty_held: 0 });
+  });
+
+  it('does not finalize inventory twice under simultaneous verification', async () => {
+    const provider = new FakeProvider();
+    const service = new CommerceService(pool, provider, 30, logger);
+    const quote = await ps5Quote(service);
+    const created = await service.createPayment({
+      sku: quote.sku,
+      quoteToken: quote.quote_token,
+      customerPhone: '+2348000000088',
+      customerName: 'Concurrent Buyer'
+    });
+    const reference = created.reference as string;
+    provider.verifyByReference.set(reference, {
+      status: 'success', reference, amount: 78_000_000, currency: 'NGN', domain: 'test'
+    });
+
+    const results = await Promise.all([service.verifyPayment(reference), service.verifyPayment(reference)]);
+
+    expect(results.every((result) => result.status === 'paid')).toBe(true);
+    const stock = await pool.query('SELECT qty_available, qty_held FROM skus WHERE sku = $1', [quote.sku]);
+    expect(stock.rows[0]).toMatchObject({ qty_available: 0, qty_held: 0 });
+    const paidEvents = await pool.query(
+      "SELECT count(*)::int AS count FROM payment_events WHERE order_reference = $1 AND event_type = 'ORDER_PAID'",
+      [reference]
+    );
+    expect(paidEvents.rows[0]?.count).toBe(1);
+  });
+
+  it('records an underpayment without releasing an unexpired hold', async () => {
+    const provider = new FakeProvider();
+    const service = new CommerceService(pool, provider, 30, logger);
+    const quote = await ps5Quote(service);
+    const created = await service.createPayment({
+      sku: quote.sku,
+      quoteToken: quote.quote_token,
+      customerPhone: '+2348000000044',
+      customerName: 'Short Buyer'
+    });
+    const reference = created.reference as string;
+    provider.verifyByReference.set(reference, {
+      status: 'success', reference, amount: 70_000_000, currency: 'NGN', domain: 'test'
+    });
+
+    const result = await service.verifyPayment(reference);
+
+    expect(result).toMatchObject({ status: 'underpaid', shortfall_ngn: 80_000, hold_expired: false });
+    const order = await pool.query('SELECT status, reservation_active FROM orders WHERE reference = $1', [reference]);
+    expect(order.rows[0]).toMatchObject({ status: 'UNDERPAID', reservation_active: true });
+  });
+
+  it('routes a late successful payment to owner review when stock was reallocated', async () => {
+    let current = new Date('2026-10-25T12:00:00.000Z');
+    const provider = new FakeProvider();
+    const service = new CommerceService(pool, provider, 30, logger, () => current);
+    const firstQuote = await ps5Quote(service);
+    const first = await service.createPayment({
+      sku: firstQuote.sku,
+      quoteToken: firstQuote.quote_token,
+      customerPhone: '+2348000000055',
+      customerName: 'Late Buyer'
+    });
+    current = new Date('2026-10-25T12:31:00.000Z');
+    expect(await service.sweepExpired()).toBe(1);
+
+    const secondQuote = await ps5Quote(service);
+    const second = await service.createPayment({
+      sku: secondQuote.sku,
+      quoteToken: secondQuote.quote_token,
+      customerPhone: '+2348000000066',
+      customerName: 'Current Buyer'
+    });
+    expect(second.status).toBe('created');
+
+    const lateReference = first.reference as string;
+    provider.verifyByReference.set(lateReference, {
+      status: 'success', reference: lateReference, amount: 78_000_000, currency: 'NGN', domain: 'test'
+    });
+    const result = await service.verifyPayment(lateReference);
+    const repeated = await service.verifyPayment(lateReference);
+
+    expect(result.status).toBe('paid_needs_owner');
+    expect(repeated.status).toBe('paid_needs_owner');
+    expect(provider.verifyCalls).toBe(1);
+    const order = await pool.query('SELECT status FROM orders WHERE reference = $1', [lateReference]);
+    expect(order.rows[0]?.status).toBe('PAID_NEEDS_OWNER');
+  });
+
+  it('publishes exactly the three intended MCP tools with their schemas', async () => {
+    const provider = new FakeProvider();
+    const service = new CommerceService(pool, provider, 30, logger);
+    const server = createMcpServer(service);
+    const client = new Client({ name: 'contract-test-client', version: '0.1.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    try {
+      const discovered = await client.listTools();
+      expect(discovered.tools.map((tool) => tool.name).sort()).toEqual([
+        'check_stock_and_quote',
+        'create_payment',
+        'verify_payment'
+      ]);
+      const createTool = discovered.tools.find((tool) => tool.name === 'create_payment');
+      expect(createTool?.inputSchema.required).toEqual(
+        expect.arrayContaining(['sku', 'quote_token', 'customer_phone', 'customer_name'])
+      );
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+});
