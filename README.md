@@ -2,6 +2,8 @@
 
 A Chord teammate that quotes live gadget stock, reserves an item, creates a Paystack test checkout, and confirms payment only by verifying the generated reference. PostgreSQL owns prices, reservations, order state, and the audit trail; customer screenshots never determine payment state.
 
+The workflow is based on discovery with Jojo Gadgets: customers currently transfer funds and send receipts through WhatsApp Business, Uchenna checks the bank app manually because the shop has received fake alerts, and stock is tracked in a handwritten book. See `INTERVIEW_NOTES.md` for the paraphrased findings and remaining measurement questions.
+
 ## Architecture
 
 ```text
