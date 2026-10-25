@@ -11,7 +11,6 @@ CREATE TABLE skus (
   variant text NOT NULL,
   price_kobo bigint NOT NULL CHECK (price_kobo > 0),
   qty_available integer NOT NULL CHECK (qty_available >= 0),
-  qty_held integer NOT NULL DEFAULT 0 CHECK (qty_held >= 0),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -36,8 +35,7 @@ CREATE TABLE orders (
   status text NOT NULL CHECK (status IN (
     'INITIALIZING', 'PENDING', 'PAID', 'UNDERPAID', 'EXPIRED', 'FAILED', 'PAID_NEEDS_OWNER'
   )),
-  reservation_active boolean NOT NULL DEFAULT true,
-  hold_expires_at timestamptz NOT NULL,
+  payment_expires_at timestamptz NOT NULL,
   authorization_url text,
   paystack_access_code text,
   verify_attempts integer NOT NULL DEFAULT 0 CHECK (verify_attempts >= 0),
@@ -49,7 +47,8 @@ CREATE TABLE orders (
 );
 
 CREATE INDEX orders_customer_sku_idx ON orders(customer_phone, sku, created_at DESC);
-CREATE INDEX orders_expiry_idx ON orders(hold_expires_at) WHERE reservation_active;
+CREATE INDEX orders_expiry_idx ON orders(payment_expires_at)
+  WHERE status IN ('INITIALIZING', 'PENDING');
 
 CREATE TABLE payment_events (
   id bigserial PRIMARY KEY,

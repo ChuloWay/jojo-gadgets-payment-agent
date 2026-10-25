@@ -83,11 +83,11 @@ describeDatabase('CommerceService with PostgreSQL', () => {
     expect(second.reference).toBe(first.reference);
     expect(provider.initializeCalls).toBe(1);
 
-    const stock = await pool.query('SELECT qty_available, qty_held FROM skus WHERE sku = $1', [quote.sku]);
-    expect(stock.rows[0]).toMatchObject({ qty_available: 0, qty_held: 1 });
+    const stock = await pool.query('SELECT qty_available FROM skus WHERE sku = $1', [quote.sku]);
+    expect(stock.rows[0]).toMatchObject({ qty_available: 1 });
   });
 
-  it('allows only one customer to reserve the last unit', async () => {
+  it('allows concurrent checkout windows without reserving the last unit', async () => {
     const provider = new FakeProvider();
     const service = new CommerceService(pool, provider, 30, logger);
     const quote = await ps5Quote(service);
@@ -97,10 +97,10 @@ describeDatabase('CommerceService with PostgreSQL', () => {
       service.createPayment({ sku: quote.sku, quoteToken: quote.quote_token, customerPhone: '+2348000000022', customerName: 'Buyer Two' })
     ]);
 
-    expect(results.map((result) => result.status).sort()).toEqual(['created', 'out_of_stock']);
-    expect(provider.initializeCalls).toBe(1);
-    const stock = await pool.query('SELECT qty_available, qty_held FROM skus WHERE sku = $1', [quote.sku]);
-    expect(stock.rows[0]).toMatchObject({ qty_available: 0, qty_held: 1 });
+    expect(results.map((result) => result.status)).toEqual(['created', 'created']);
+    expect(provider.initializeCalls).toBe(2);
+    const stock = await pool.query('SELECT qty_available FROM skus WHERE sku = $1', [quote.sku]);
+    expect(stock.rows[0]).toMatchObject({ qty_available: 1 });
   });
 
   it('retains and reuses an initializing order after an ambiguous provider failure', async () => {
@@ -122,8 +122,8 @@ describeDatabase('CommerceService with PostgreSQL', () => {
     expect(second.status).toBe('payment_provider_error');
     expect(second.reference).toBe(first.reference);
     expect(provider.initializeCalls).toBe(1);
-    const stock = await pool.query('SELECT qty_available, qty_held FROM skus WHERE sku = $1', [quote.sku]);
-    expect(stock.rows[0]).toMatchObject({ qty_available: 0, qty_held: 1 });
+    const stock = await pool.query('SELECT qty_available FROM skus WHERE sku = $1', [quote.sku]);
+    expect(stock.rows[0]).toMatchObject({ qty_available: 1 });
   });
 
   it('marks a successful payment once when verification is repeated', async () => {
@@ -147,8 +147,8 @@ describeDatabase('CommerceService with PostgreSQL', () => {
     expect(first).toMatchObject({ status: 'paid', already_confirmed: false });
     expect(second).toMatchObject({ status: 'paid', already_confirmed: true });
     expect(provider.verifyCalls).toBe(1);
-    const stock = await pool.query('SELECT qty_available, qty_held FROM skus WHERE sku = $1', [quote.sku]);
-    expect(stock.rows[0]).toMatchObject({ qty_available: 0, qty_held: 0 });
+    const stock = await pool.query('SELECT qty_available FROM skus WHERE sku = $1', [quote.sku]);
+    expect(stock.rows[0]).toMatchObject({ qty_available: 0 });
   });
 
   it('does not finalize inventory twice under simultaneous verification', async () => {
@@ -169,8 +169,8 @@ describeDatabase('CommerceService with PostgreSQL', () => {
     const results = await Promise.all([service.verifyPayment(reference), service.verifyPayment(reference)]);
 
     expect(results.every((result) => result.status === 'paid')).toBe(true);
-    const stock = await pool.query('SELECT qty_available, qty_held FROM skus WHERE sku = $1', [quote.sku]);
-    expect(stock.rows[0]).toMatchObject({ qty_available: 0, qty_held: 0 });
+    const stock = await pool.query('SELECT qty_available FROM skus WHERE sku = $1', [quote.sku]);
+    expect(stock.rows[0]).toMatchObject({ qty_available: 0 });
     const paidEvents = await pool.query(
       "SELECT count(*)::int AS count FROM payment_events WHERE order_reference = $1 AND event_type = 'ORDER_PAID'",
       [reference]
@@ -178,7 +178,34 @@ describeDatabase('CommerceService with PostgreSQL', () => {
     expect(paidEvents.rows[0]?.count).toBe(1);
   });
 
-  it('records an underpayment without releasing an unexpired hold', async () => {
+  it('allocates the last unit to only one of two successfully paying customers', async () => {
+    const provider = new FakeProvider();
+    const service = new CommerceService(pool, provider, 30, logger);
+    const quote = await ps5Quote(service);
+    const [first, second] = await Promise.all([
+      service.createPayment({ sku: quote.sku, quoteToken: quote.quote_token, customerPhone: '+2348000000091', customerName: 'First Payer' }),
+      service.createPayment({ sku: quote.sku, quoteToken: quote.quote_token, customerPhone: '+2348000000092', customerName: 'Second Payer' })
+    ]);
+    const firstReference = first.reference as string;
+    const secondReference = second.reference as string;
+    provider.verifyByReference.set(firstReference, {
+      status: 'success', reference: firstReference, amount: 78_000_000, currency: 'NGN', domain: 'test'
+    });
+    provider.verifyByReference.set(secondReference, {
+      status: 'success', reference: secondReference, amount: 78_000_000, currency: 'NGN', domain: 'test'
+    });
+
+    const results = await Promise.all([
+      service.verifyPayment(firstReference),
+      service.verifyPayment(secondReference)
+    ]);
+
+    expect(results.map((result) => result.status).sort()).toEqual(['paid', 'paid_needs_owner']);
+    const stock = await pool.query('SELECT qty_available FROM skus WHERE sku = $1', [quote.sku]);
+    expect(stock.rows[0]).toMatchObject({ qty_available: 0 });
+  });
+
+  it('records an underpayment without allocating stock', async () => {
     const provider = new FakeProvider();
     const service = new CommerceService(pool, provider, 30, logger);
     const quote = await ps5Quote(service);
@@ -195,9 +222,12 @@ describeDatabase('CommerceService with PostgreSQL', () => {
 
     const result = await service.verifyPayment(reference);
 
-    expect(result).toMatchObject({ status: 'underpaid', shortfall_ngn: 80_000, hold_expired: false });
-    const order = await pool.query('SELECT status, reservation_active FROM orders WHERE reference = $1', [reference]);
-    expect(order.rows[0]).toMatchObject({ status: 'UNDERPAID', reservation_active: true });
+    expect(result).toMatchObject({ status: 'underpaid', shortfall_ngn: 80_000, payment_window_expired: false });
+    const order = await pool.query(
+      `SELECT o.status, s.qty_available FROM orders o JOIN skus s ON s.sku = o.sku WHERE o.reference = $1`,
+      [reference]
+    );
+    expect(order.rows[0]).toMatchObject({ status: 'UNDERPAID', qty_available: 1 });
   });
 
   it('routes a late successful payment to owner review when stock was reallocated', async () => {
@@ -211,9 +241,6 @@ describeDatabase('CommerceService with PostgreSQL', () => {
       customerPhone: '+2348000000055',
       customerName: 'Late Buyer'
     });
-    current = new Date('2026-10-25T12:31:00.000Z');
-    expect(await service.sweepExpired()).toBe(1);
-
     const secondQuote = await ps5Quote(service);
     const second = await service.createPayment({
       sku: secondQuote.sku,
@@ -222,6 +249,15 @@ describeDatabase('CommerceService with PostgreSQL', () => {
       customerName: 'Current Buyer'
     });
     expect(second.status).toBe('created');
+
+    const currentReference = second.reference as string;
+    provider.verifyByReference.set(currentReference, {
+      status: 'success', reference: currentReference, amount: 78_000_000, currency: 'NGN', domain: 'test'
+    });
+    expect((await service.verifyPayment(currentReference)).status).toBe('paid');
+
+    current = new Date('2026-10-25T12:31:00.000Z');
+    expect(await service.sweepExpired()).toBe(1);
 
     const lateReference = first.reference as string;
     provider.verifyByReference.set(lateReference, {
@@ -232,7 +268,7 @@ describeDatabase('CommerceService with PostgreSQL', () => {
 
     expect(result.status).toBe('paid_needs_owner');
     expect(repeated.status).toBe('paid_needs_owner');
-    expect(provider.verifyCalls).toBe(1);
+    expect(provider.verifyCalls).toBe(2);
     const order = await pool.query('SELECT status FROM orders WHERE reference = $1', [lateReference]);
     expect(order.rows[0]?.status).toBe('PAID_NEEDS_OWNER');
   });

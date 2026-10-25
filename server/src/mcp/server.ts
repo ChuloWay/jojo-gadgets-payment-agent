@@ -54,7 +54,7 @@ export function createMcpServer(commerce: CommerceService, logger?: Logger): Mcp
     'create_payment',
     {
       title: 'Create payment',
-      description: 'Atomically reserve one unit at the previously quoted price and initialize a Paystack test checkout. Call only after the customer confirms the exact item and total.',
+      description: 'Create a time-limited Paystack test checkout at the previously quoted price. This does not reserve stock; allocation happens only after verified payment. Call only after the customer confirms the exact item and total.',
       inputSchema: {
         sku: z.string().trim().min(1),
         quote_token: z.string().trim().min(1).describe('Token returned with the selected stock quote'),

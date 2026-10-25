@@ -1,6 +1,6 @@
 # Jojo Gadgets Payment Agent
 
-A Chord teammate that quotes live gadget stock, reserves an item, creates a Paystack test checkout, and confirms payment only by verifying the generated reference. PostgreSQL owns prices, reservations, order state, and the audit trail; customer screenshots never determine payment state.
+A Chord teammate that quotes live gadget stock, creates a time-limited Paystack test checkout, and confirms payment only by verifying the generated reference. PostgreSQL owns prices, stock allocation, order state, and the audit trail; customer screenshots never determine payment state.
 
 The workflow is based on discovery with Jojo Gadgets: customers currently transfer funds and send receipts through WhatsApp Business, Uchenna checks the bank app manually because the shop has received fake alerts, and stock is tracked in a handwritten book. See `INTERVIEW_NOTES.md` for the paraphrased findings and remaining measurement questions.
 
@@ -12,7 +12,7 @@ WhatsApp simulator → Chord teammate + SKILL.md → Streamable HTTP MCP server
                                                    └─ Paystack test API
 ```
 
-The MCP server exposes exactly three tools: `check_stock_and_quote`, `create_payment`, and `verify_payment`. Quote tokens bind the price the customer accepted to checkout creation. Orders are persisted as `INITIALIZING` before Paystack is called, and database locks make reservation and payment finalization idempotent.
+The MCP server exposes exactly three tools: `check_stock_and_quote`, `create_payment`, and `verify_payment`. Quote tokens bind the price the customer accepted to checkout creation. Orders are persisted as `INITIALIZING` before Paystack is called, and database locks allocate stock exactly once when payment is verified. Creating a checkout does not reserve stock, matching the business's fast-moving Computer Village sales process.
 
 ## Local setup
 
@@ -45,7 +45,7 @@ npm run build
 | `PAYSTACK_SECRET_KEY` | Paystack **test** secret, stored only on the server |
 | `PAYSTACK_BASE_URL` | Defaults to `https://api.paystack.co` |
 | `MCP_BEARER_TOKEN` | Long random token Chord uses to authenticate to `/mcp` |
-| `HOLD_MINUTES` | Reservation duration; defaults to 30 |
+| `PAYMENT_WINDOW_MINUTES` | Checkout window shown to the customer; defaults to 30 |
 | `PORT` | HTTP port; defaults to 3000 |
 | `LOG_LEVEL` | Pino log level |
 
@@ -63,7 +63,7 @@ Do not commit `.env`, Chord credentials, Paystack keys, customer data, or real p
 ## Demo script
 
 1. Ask for a PS5. The teammate looks up the live row and quotes the new 825GB Disc Edition at ₦780,000.
-2. Agree to buy. The teammate reserves it and sends the Paystack test link, reference, and hold expiry.
+2. Agree to buy. The teammate sends the Paystack test link, reference, and payment-window expiry and explains that stock is allocated after verified payment.
 3. Send a fake payment screenshot without checking out. The teammate rejects it as evidence, verifies the reference, and reports that no successful payment exists.
 4. Pay through Paystack test checkout and say “Done, I’ve paid.” The teammate verifies the reference and sends the receipt details.
 5. Say “I’ve paid” again. Verification returns the stored paid order without changing inventory or calling Paystack again.

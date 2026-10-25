@@ -21,8 +21,8 @@ export async function seed(connectionString: string): Promise<void> {
     for (const row of seedRows) {
       await client.query(
         `INSERT INTO skus
-          (sku, name, category, condition, variant, price_kobo, qty_available, qty_held)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 0)`,
+          (sku, name, category, condition, variant, price_kobo, qty_available)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [...row]
       );
     }

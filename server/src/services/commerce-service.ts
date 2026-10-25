@@ -22,8 +22,7 @@ type OrderRow = {
   amount_expected_kobo: string;
   amount_paid_kobo: string | null;
   status: string;
-  reservation_active: boolean;
-  hold_expires_at: Date;
+  payment_expires_at: Date;
   authorization_url: string | null;
   paystack_access_code: string | null;
   created_at: Date;
@@ -61,7 +60,7 @@ export class CommerceService {
   constructor(
     private readonly pool: DatabasePool,
     private readonly provider: PaymentProvider,
-    private readonly holdMinutes: number,
+    private readonly paymentWindowMinutes: number,
     private readonly logger: Logger,
     private readonly now: () => Date = () => new Date()
   ) {}
@@ -159,9 +158,11 @@ export class CommerceService {
         condition: string;
         variant: string;
         current_price_kobo: string;
+        qty_available: number;
       }>(
         `SELECT q.token, q.sku, q.price_kobo, q.expires_at,
-                s.name, s.condition, s.variant, s.price_kobo AS current_price_kobo
+                s.name, s.condition, s.variant, s.price_kobo AS current_price_kobo,
+                s.qty_available
          FROM quotes q JOIN skus s ON s.sku = q.sku
          WHERE q.token = $1 AND q.sku = $2 FOR UPDATE OF q, s`,
         [input.quoteToken, input.sku]
@@ -176,6 +177,11 @@ export class CommerceService {
       }
       item = { name: quoteRow.name, condition: quoteRow.condition, variant: quoteRow.variant };
 
+      if (quoteRow.qty_available < 1) {
+        await client.query('ROLLBACK');
+        return { status: 'out_of_stock', message_for_agent: 'That item is no longer available. Offer another variant or owner review.' };
+      }
+
       const existing = await client.query<OrderRow>(
         `SELECT * FROM orders
          WHERE customer_phone = $1 AND sku = $2 AND status = ANY($3::text[])
@@ -183,29 +189,26 @@ export class CommerceService {
         [input.customerPhone, input.sku, [...ACTIVE_PAYMENT_STATUSES]]
       );
       const active = existing.rows[0];
-      if (active && active.hold_expires_at > now && active.reservation_active) {
+      if (active && active.payment_expires_at > now) {
         await client.query('COMMIT');
         return this.paymentCreationResult(active, item, active.authorization_url ? 'existing_pending' : 'payment_provider_error');
       }
-      if (active?.reservation_active) await this.releaseReservation(client, active.reference, active.sku, 'EXPIRED');
-
-      const reserved = await client.query(
-        `UPDATE skus SET qty_available = qty_available - 1, qty_held = qty_held + 1, updated_at = now()
-         WHERE sku = $1 AND qty_available >= 1 RETURNING sku`,
-        [input.sku]
-      );
-      if (reserved.rowCount !== 1) {
-        await client.query('ROLLBACK');
-        return { status: 'out_of_stock', message_for_agent: 'That item is no longer available. Offer another variant or owner review.' };
+      if (active) {
+        await client.query(
+          `UPDATE orders SET status = 'EXPIRED', updated_at = now()
+           WHERE reference = $1 AND status = ANY($2::text[])`,
+          [active.reference, [...ACTIVE_PAYMENT_STATUSES]]
+        );
+        await this.event(client, active.reference, 'PAYMENT_WINDOW_EXPIRED', {});
       }
 
       const reference = referenceFor(now);
-      const holdExpiresAt = new Date(now.getTime() + this.holdMinutes * 60_000);
+      const paymentExpiresAt = new Date(now.getTime() + this.paymentWindowMinutes * 60_000);
       const inserted = await client.query<OrderRow>(
         `INSERT INTO orders (
            reference, sku, quote_token, customer_phone, customer_name, customer_email,
-           amount_expected_kobo, status, reservation_active, hold_expires_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'INITIALIZING', true, $8)
+           amount_expected_kobo, status, payment_expires_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'INITIALIZING', $8)
          RETURNING *`,
         [
           reference,
@@ -215,11 +218,11 @@ export class CommerceService {
           input.customerName,
           customerEmail(input.customerPhone),
           quoteRow.price_kobo,
-          holdExpiresAt
+          paymentExpiresAt
         ]
       );
       order = inserted.rows[0]!;
-      await this.event(client, reference, 'ORDER_INITIALIZING', { hold_expires_at: holdExpiresAt.toISOString() });
+      await this.event(client, reference, 'ORDER_INITIALIZING', { payment_expires_at: paymentExpiresAt.toISOString() });
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -253,10 +256,11 @@ export class CommerceService {
         const failureClient = await this.pool.connect();
         try {
           await failureClient.query('BEGIN');
-          const locked = await failureClient.query<OrderRow>('SELECT * FROM orders WHERE reference = $1 FOR UPDATE', [order.reference]);
-          if (locked.rows[0]?.reservation_active) {
-            await this.releaseReservation(failureClient, order.reference, order.sku, 'FAILED');
-          }
+          await failureClient.query(
+            `UPDATE orders SET status = 'FAILED', updated_at = now()
+             WHERE reference = $1 AND status = 'INITIALIZING'`,
+            [order.reference]
+          );
           await this.event(failureClient, order.reference, 'PAYMENT_INITIALIZE_REJECTED', { reason: 'provider_4xx' });
           await failureClient.query('COMMIT');
         } catch (failure) {
@@ -266,14 +270,14 @@ export class CommerceService {
           failureClient.release();
         }
       } else {
-        await this.alert(order.reference, 'Payment initialization outcome is ambiguous; reservation retained for reconciliation');
+        await this.alert(order.reference, 'Payment initialization outcome is ambiguous and needs reconciliation');
       }
       return {
         status: 'payment_provider_error',
         reference: order.reference,
-        hold_expires_at: order.hold_expires_at.toISOString(),
+        payment_expires_at: order.payment_expires_at.toISOString(),
         message_for_agent: definitelyRejected
-          ? 'The payment provider rejected initialization and the reservation was released. Do not claim a payment link exists.'
+          ? 'The payment provider rejected initialization. Do not claim a payment link exists.'
           : 'The payment provider outcome is uncertain. Keep the reference, do not create another order, and say the case was flagged for owner review.'
       };
     }
@@ -288,7 +292,7 @@ export class CommerceService {
         status: 'paid_needs_owner',
         reference,
         paid_ngn: koboToNaira(initial.amount_paid_kobo ?? initial.amount_expected_kobo),
-        message_for_agent: 'Payment was already verified after the hold expired, but stock was unavailable. Say it remains flagged for owner review; do not promise a refund.'
+        message_for_agent: 'Payment was already verified, but stock was unavailable when allocation was attempted. Say it remains flagged for owner review; do not promise a refund.'
       };
     }
 
@@ -341,11 +345,17 @@ export class CommerceService {
       await client.query('BEGIN');
       const expired = await client.query<OrderRow>(
         `SELECT * FROM orders
-         WHERE reservation_active = true AND hold_expires_at <= $1
-         ORDER BY hold_expires_at LIMIT $2 FOR UPDATE SKIP LOCKED`,
+         WHERE status IN ('INITIALIZING', 'PENDING') AND payment_expires_at <= $1
+         ORDER BY payment_expires_at LIMIT $2 FOR UPDATE SKIP LOCKED`,
         [this.now(), limit]
       );
-      for (const order of expired.rows) await this.releaseReservation(client, order.reference, order.sku, order.status === 'UNDERPAID' ? 'UNDERPAID' : 'EXPIRED');
+      for (const order of expired.rows) {
+        await client.query(
+          `UPDATE orders SET status = 'EXPIRED', updated_at = now() WHERE reference = $1`,
+          [order.reference]
+        );
+        await this.event(client, order.reference, 'PAYMENT_WINDOW_EXPIRED', {});
+      }
       await client.query('COMMIT');
       return expired.rows.length;
     } catch (error) {
@@ -376,16 +386,15 @@ export class CommerceService {
       }
 
       const expected = integer(order.amount_expected_kobo);
-      const expired = order.hold_expires_at <= this.now();
+      const paymentWindowExpired = order.payment_expires_at <= this.now();
       if (verified.amount < expected) {
-        if (expired && order.reservation_active) await this.releaseReservation(client, reference, order.sku, 'UNDERPAID');
         await client.query(
           `UPDATE orders SET status = 'UNDERPAID', amount_paid_kobo = $2, last_verified_at = now(), updated_at = now()
            WHERE reference = $1`,
           [reference, verified.amount]
         );
         await this.event(client, reference, 'PAYMENT_UNDERPAID', { paid_kobo: verified.amount, expected_kobo: expected });
-        await this.insertAlert(client, reference, expired ? 'Underpayment received after the stock hold expired' : 'Underpayment requires owner review');
+        await this.insertAlert(client, reference, paymentWindowExpired ? 'Underpayment received after the payment window expired' : 'Underpayment requires owner review');
         await client.query('COMMIT');
         return {
           status: 'underpaid',
@@ -393,35 +402,25 @@ export class CommerceService {
           paid_ngn: koboToNaira(verified.amount),
           expected_ngn: koboToNaira(expected),
           shortfall_ngn: koboToNaira(expected - verified.amount),
-          hold_expired: expired,
+          payment_window_expired: paymentWindowExpired,
           message_for_agent: `State the ${formatNaira(expected - verified.amount)} shortfall and say it was flagged for owner review. Do not confirm the order as paid.`
         };
       }
 
-      if (expired && order.reservation_active) await this.releaseReservation(client, reference, order.sku, 'EXPIRED');
-      let paidStatus: 'PAID' | 'PAID_NEEDS_OWNER' = 'PAID';
-      if (expired) {
-        const reacquired = await client.query(
-          `UPDATE skus SET qty_available = qty_available - 1, updated_at = now()
-           WHERE sku = $1 AND qty_available >= 1 RETURNING sku`,
-          [order.sku]
-        );
-        if (reacquired.rowCount !== 1) paidStatus = 'PAID_NEEDS_OWNER';
-      } else {
-        await client.query(
-          `UPDATE skus SET qty_held = qty_held - 1, updated_at = now()
-           WHERE sku = $1 AND qty_held >= 1`,
-          [order.sku]
-        );
-      }
+      const allocated = await client.query(
+        `UPDATE skus SET qty_available = qty_available - 1, updated_at = now()
+         WHERE sku = $1 AND qty_available >= 1 RETURNING sku`,
+        [order.sku]
+      );
+      const paidStatus: 'PAID' | 'PAID_NEEDS_OWNER' = allocated.rowCount === 1 ? 'PAID' : 'PAID_NEEDS_OWNER';
 
       await client.query(
-        `UPDATE orders SET status = $2, reservation_active = false, amount_paid_kobo = $3,
+        `UPDATE orders SET status = $2, amount_paid_kobo = $3,
           paid_at = now(), last_verified_at = now(), updated_at = now() WHERE reference = $1`,
         [reference, paidStatus, verified.amount]
       );
       await this.event(client, reference, paidStatus === 'PAID' ? 'ORDER_PAID' : 'PAID_WITHOUT_STOCK', { paid_kobo: verified.amount });
-      if (paidStatus === 'PAID_NEEDS_OWNER') await this.insertAlert(client, reference, 'Payment succeeded after expiry but stock is unavailable');
+      if (paidStatus === 'PAID_NEEDS_OWNER') await this.insertAlert(client, reference, 'Payment succeeded but stock was unavailable at allocation time');
       await client.query('COMMIT');
 
       if (paidStatus === 'PAID_NEEDS_OWNER') {
@@ -429,7 +428,7 @@ export class CommerceService {
           status: 'paid_needs_owner',
           reference,
           paid_ngn: koboToNaira(verified.amount),
-          message_for_agent: 'Payment succeeded after the hold expired, but the item is unavailable. Apologise and say it was flagged for owner review; do not promise a refund.'
+          message_for_agent: 'Payment succeeded, but the item was unavailable when allocation was attempted. Apologise and say it was flagged for owner review; do not promise a refund.'
         };
       }
       return this.paidResult({ ...order, amount_paid_kobo: String(verified.amount), status: 'PAID', paid_at: this.now() }, false);
@@ -456,15 +455,25 @@ export class CommerceService {
         const full = await this.orderWithItem(reference);
         return this.paidResult(full!, true);
       }
-      if (order.hold_expires_at <= this.now()) {
-        if (order.reservation_active) await this.releaseReservation(client, reference, order.sku, order.status === 'UNDERPAID' ? 'UNDERPAID' : 'EXPIRED');
+      if (order.status === 'UNDERPAID') {
         await client.query('COMMIT');
         return {
-          status: order.status === 'UNDERPAID' ? 'underpaid' : 'expired',
+          status: 'underpaid',
           reference,
-          message_for_agent: order.status === 'UNDERPAID'
-            ? 'The payment is still short and the stock hold has expired. Say it was flagged for owner review.'
-            : 'No successful payment was found before the hold expired. Offer to check stock and quote again.'
+          message_for_agent: 'The payment is still short. Say it remains flagged for owner review and do not confirm the order as paid.'
+        };
+      }
+      if (order.payment_expires_at <= this.now()) {
+        await client.query(
+          `UPDATE orders SET status = 'EXPIRED', updated_at = now() WHERE reference = $1`,
+          [reference]
+        );
+        await this.event(client, reference, 'PAYMENT_WINDOW_EXPIRED', {});
+        await client.query('COMMIT');
+        return {
+          status: 'expired',
+          reference,
+          message_for_agent: 'No successful payment was found before the payment window expired. Check live stock and create a fresh quote before offering another link.'
         };
       }
       await client.query('UPDATE orders SET last_verified_at = now(), updated_at = now() WHERE reference = $1', [reference]);
@@ -474,8 +483,8 @@ export class CommerceService {
         status: 'not_paid_yet',
         reference,
         authorization_url: order.authorization_url,
-        hold_expires_at: order.hold_expires_at.toISOString(),
-        message_for_agent: 'No successful payment exists on this reference yet. Resend the link when available and remind the customer of the hold expiry.'
+        payment_expires_at: order.payment_expires_at.toISOString(),
+        message_for_agent: 'No successful payment exists on this reference yet. Resend the link when available and remind the customer that the payment window is time-limited and stock is allocated only after verification.'
       };
     } catch (error) {
       await client.query('ROLLBACK');
@@ -500,8 +509,7 @@ export class CommerceService {
         const full = await this.orderWithItem(reference);
         return this.paidResult(full!, true);
       }
-      if (order.reservation_active) await this.releaseReservation(client, reference, order.sku, 'FAILED');
-      else await client.query("UPDATE orders SET status = 'FAILED', updated_at = now() WHERE reference = $1", [reference]);
+      await client.query("UPDATE orders SET status = 'FAILED', updated_at = now() WHERE reference = $1", [reference]);
       await this.event(client, reference, 'PAYMENT_FAILED', { provider_status: providerStatus });
       await client.query('COMMIT');
       return { status: 'failed', reference, message_for_agent: 'The payment failed or was reversed. Offer to check stock and create a new payment.' };
@@ -520,9 +528,9 @@ export class CommerceService {
       item: `${item.name} (${item.condition}, ${item.variant})`,
       amount_ngn: koboToNaira(order.amount_expected_kobo),
       authorization_url: order.authorization_url,
-      hold_expires_at: order.hold_expires_at.toISOString(),
+      payment_expires_at: order.payment_expires_at.toISOString(),
       message_for_agent: order.authorization_url
-        ? `Send the checkout link and reference. State that the item is held until ${order.hold_expires_at.toISOString()} and ask the customer to say paid when done.`
+        ? `Send the checkout link and reference. State that the payment window ends at ${order.payment_expires_at.toISOString()}, stock is allocated only after verified payment, and the customer should say paid when done.`
         : 'The checkout outcome is unresolved. Keep this reference and say the case was flagged for owner review; do not create another order.'
     };
   }
@@ -547,23 +555,6 @@ export class CommerceService {
       [reference]
     );
     return result.rows[0];
-  }
-
-  private async releaseReservation(client: DatabaseClient, reference: string, sku: string, nextStatus: string): Promise<void> {
-    const released = await client.query(
-      `UPDATE orders SET reservation_active = false, status = $2, updated_at = now()
-       WHERE reference = $1 AND reservation_active = true RETURNING reference`,
-      [reference, nextStatus]
-    );
-    if (released.rowCount === 1) {
-      const stock = await client.query(
-        `UPDATE skus SET qty_available = qty_available + 1, qty_held = qty_held - 1, updated_at = now()
-         WHERE sku = $1 AND qty_held >= 1 RETURNING sku`,
-        [sku]
-      );
-      if (stock.rowCount !== 1) throw new Error(`Inventory invariant failed while releasing ${reference}`);
-      await this.event(client, reference, 'RESERVATION_RELEASED', { next_status: nextStatus });
-    }
   }
 
   private async recordProviderAttempt(

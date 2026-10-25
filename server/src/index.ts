@@ -10,7 +10,7 @@ const config = loadConfig();
 const logger = pino({ level: config.logLevel, redact: ['req.headers.authorization'] });
 const pool = createPool(config.databaseUrl);
 const provider = new PaystackClient(config.paystackSecretKey, config.paystackBaseUrl);
-const commerce = new CommerceService(pool, provider, config.holdMinutes, logger);
+const commerce = new CommerceService(pool, provider, config.paymentWindowMinutes, logger);
 const app = createApp({ config, pool, commerce, logger });
 
 const server = app.listen(config.port, '0.0.0.0', () => {
@@ -19,8 +19,8 @@ const server = app.listen(config.port, '0.0.0.0', () => {
 
 const sweep = setInterval(() => {
   void commerce.sweepExpired().then((count) => {
-    if (count > 0) logger.info({ count }, 'expired reservations released');
-  }).catch((error) => logger.error({ error }, 'reservation sweep failed'));
+    if (count > 0) logger.info({ count }, 'expired payment windows closed');
+  }).catch((error) => logger.error({ error }, 'payment-window sweep failed'));
 }, 60_000);
 sweep.unref();
 

@@ -6,7 +6,7 @@ const envSchema = z.object({
   PAYSTACK_SECRET_KEY: z.string().min(1),
   PAYSTACK_BASE_URL: z.string().url().default('https://api.paystack.co'),
   MCP_BEARER_TOKEN: z.string().min(24),
-  HOLD_MINUTES: z.coerce.number().int().positive().default(30),
+  PAYMENT_WINDOW_MINUTES: z.coerce.number().int().positive().default(30),
   DEMO_MODE: z.enum(['true', 'false']).default('false'),
   LOG_LEVEL: z.string().default('info')
 });
@@ -17,7 +17,7 @@ export type AppConfig = {
   paystackSecretKey: string;
   paystackBaseUrl: string;
   mcpBearerToken: string;
-  holdMinutes: number;
+  paymentWindowMinutes: number;
   demoMode: boolean;
   logLevel: string;
 };
@@ -30,7 +30,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     paystackSecretKey: parsed.PAYSTACK_SECRET_KEY,
     paystackBaseUrl: parsed.PAYSTACK_BASE_URL,
     mcpBearerToken: parsed.MCP_BEARER_TOKEN,
-    holdMinutes: parsed.HOLD_MINUTES,
+    paymentWindowMinutes: parsed.PAYMENT_WINDOW_MINUTES,
     demoMode: parsed.DEMO_MODE === 'true',
     logLevel: parsed.LOG_LEVEL
   };

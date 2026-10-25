@@ -22,11 +22,11 @@ Customers normally come to the physical shop, so Uchenna considers it practical 
 
 The current build uses a Paystack test checkout with a unique reference. A temporary or dedicated virtual account is a possible later integration, not part of this demonstration.
 
-## Stock and holds
+## Stock and payment windows
 
-Uchenna tracks stock manually in a book. A hold does not reduce physical stock; only a completed purchase does. If a hold expires, he moves on to the next sale.
+Uchenna tracks stock manually in a book. Computer Village deals happen continuously, including enquiries from other vendors looking for products they do not have. An exclusive hold is therefore difficult to honor; only a completed purchase affects stock, and an unpaid customer cannot block the next sale.
 
-The demo represents this with separate `qty_available` and `qty_held` values. Creating a payment moves one unit from available to held while total physical stock remains unchanged. Verified payment removes the held unit from stock; expiry returns it to available.
+The demo now treats checkout expiry as a payment window rather than an inventory reservation. Creating a payment does not change stock. Successful verification allocates one unit atomically; if the final unit was sold through another deal first, the order becomes `PAID_NEEDS_OWNER` for resolution.
 
 ## Warranty
 
@@ -38,7 +38,7 @@ The default warranty is three months. It can vary depending on the deal under wh
 2. Match every checkout and verification attempt to a unique reference.
 3. Capture the customer's phone number before payment so unresolved checks can be followed up.
 4. Keep unavailable verification pending and flag it for owner review.
-5. Treat a hold as a temporary allocation, not a completed stock deduction.
+5. Do not promise an exclusive hold; allocate stock only after verified payment.
 6. Reconcile the agent's inventory with the owner's book and walk-in sales before any real launch.
 7. Present three months as the default warranty and refer item-specific coverage to Uchenna.
 
@@ -48,4 +48,4 @@ The default warranty is three months. It can vary depending on the deal under wh
 - Roughly how many minutes does a normal check take, and how long can it take during bank downtime?
 - Has a fake alert ever caused a financial loss, or has manual checking caught every attempt so far?
 - Who besides Uchenna can update the stock book or confirm a payment?
-- What exact event makes an item unavailable to the next customer: payment, collection, or an owner-approved hold?
+- Should the payment window be shorter than 30 minutes for fast-moving items?
