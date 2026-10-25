@@ -1,4 +1,4 @@
-# Gadget Vendor Payment Agent
+# Chuloway Gadgets Payment Agent
 
 A Chord teammate that quotes live gadget stock, reserves an item, creates a Paystack test checkout, and confirms payment only by verifying the generated reference. PostgreSQL owns prices, reservations, order state, and the audit trail; customer screenshots never determine payment state.
 
