@@ -4,29 +4,28 @@
 
 Forward-deployed Engineering and Technical Product Management.
 
-## Business validation required before submission
+## Business context
 
-The exercise requires a real business. Chuloway Gadgets may be used directly if it is a real operating business. If it is a demo or anonymized name, the final submission should say that it represents the real gadget vendor consulted for this exercise. Do not claim that Chris Okoye was interviewed, quote him, or attribute business facts to him unless that happened.
+Jojo Gadgets is a real gadget business in Computer Village, Ikeja, Lagos. The owner is Uchenna Joseph Etokwudo. The business name, owner, location, and three-month warranty have been supplied for this exercise. Do not attribute a quotation, incident rate, financial loss, return policy, or operational process to Uchenna unless it has been confirmed with him.
 
 All customer identities, phone numbers, inventory rows, prices, Paystack transactions, shop address details, and policies in the build are synthetic test data.
 
 ## Problem statement draft
 
-Chuloway Gadgets is a Lagos gadget seller that handles laptop, console, and phone enquiries through WhatsApp, with individual orders often worth hundreds of thousands of naira. Customers commonly send transfer screenshots or alert messages, leaving the owner to match payments manually before releasing expensive stock; a convincing fake confirmation can therefore cost the value of an entire device. This Chord teammate quotes from controlled test inventory, reserves the selected item, creates a Paystack test checkout with a unique reference, and confirms payment only by verifying that reference. Delivery logistics, trade-ins, installments, negotiation, refunds, live credentials, and real customer data are deliberately outside the demonstration.
+Jojo Gadgets is a gadget seller in Computer Village, Ikeja, that handles enquiries for laptops, consoles, and phones. The proposed agent addresses the costly manual step of matching a customer's payment claim or screenshot to an actual payment before releasing high-value stock. This Chord teammate quotes from controlled test inventory, reserves the selected item, creates a Paystack test checkout with a unique reference, and confirms payment only by verifying that reference. Delivery logistics, trade-ins, installments, negotiation, refunds, live credentials, and real customer data are deliberately outside the demonstration.
 
 Before submitting this paragraph, replace or qualify any statement that has not been confirmed with the real business.
 
 ## Synthetic demo identity and policies
 
-- **Business:** Chuloway Gadgets
-- **Owner:** Chris Okoye
+- **Business:** Jojo Gadgets
+- **Owner:** Uchenna Joseph Etokwudo
 - **Demo location:** Computer Village, Ikeja, Lagos; no street address or real pickup details are used
-- **New-device warranty:** Three-month shop warranty for verified factory faults
-- **UK-used/refurbished warranty:** Seven-day replacement window for verified hardware faults
-- **Returns:** No change-of-mind return after collection, unsealing, activation, or configuration
+- **Warranty:** Three months; exact coverage and remedy require owner confirmation
+- **Returns:** No policy has been supplied; all requests go to owner review
 - **Owner review:** Faults, replacements, cancellations, refunds, delivery, trade-ins, bulk orders, and payment disputes
 
-These policies are suitable for a test conversation. The real owner must approve them before the go-live note presents them as business policy.
+The confirmed details can be used in the test conversation. Unconfirmed warranty coverage and return terms must not be presented as established business policy.
 
 ## Short discovery questions for the real vendor
 
