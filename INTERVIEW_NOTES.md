@@ -10,17 +10,19 @@
 
 Customers pay by bank transfer and send the receipt to the shop's WhatsApp Business account. Uchenna confirms payment by opening his bank application and checking that the money actually arrived.
 
+Depending on market activity, he checks tens of customer payments in a week and can approach roughly 100 in a busy week. There is no reliable per-check duration: when a receipt arrives, he interrupts what he is doing, opens the bank application, and looks for the credit. Bank or network downtime makes that wait unpredictable.
+
 ## Fraud and operational problem
 
-The business has previously lost money because of scammers sending fake payment alerts. That experience is why Uchenna does not rely on the receipt or alert sent by the customer and always checks the bank application himself.
+The business has previously lost money because of scammers sending fake payment alerts. Uchenna estimates the cumulative loss in the hundreds of thousands to millions of naira; this is an owner-supplied range rather than an audited figure. That experience is why he does not rely on the receipt or alert sent by the customer and always checks the bank application himself.
 
 When the bank service is unavailable or a transfer does not appear promptly, verification takes longer. Uchenna collects the customer's phone number so he can follow up after checking again. In one case, a delayed payment was later reversed and caused a dispute because the customer would not resend the money immediately.
 
 ## Fit of the proposed payment flow
 
-Customers normally come to the physical shop, so Uchenna considers it practical to give them a checkout link. He would also consider a temporary bank account generated specifically for that payment.
+Customers normally come to the physical shop, so Uchenna considers it practical to give them a checkout link. A transaction-specific temporary bank account that he can send directly to the customer is also a strong fit for the way customers already pay.
 
-The current build uses a Paystack test checkout with a unique reference. A temporary or dedicated virtual account is a possible later integration, not part of this demonstration.
+The current build uses a Paystack test checkout with a unique reference. For a later iteration, Paystack's **Pay with Transfer** flow is a better match than a reusable Dedicated Virtual Account: it creates a temporary account tied to one transaction, returns the bank and account details for the agent to share, and expires after the transaction or configured payment window. The direct Charge API flow would add another integration path and is therefore not being inserted into the already-tested demonstration until it can be exercised end to end in test mode.
 
 ## Stock and payment windows
 
@@ -41,11 +43,9 @@ The default warranty is three months. It can vary depending on the deal under wh
 5. Do not promise an exclusive hold; allocate stock only after verified payment.
 6. Reconcile the agent's inventory with the owner's book and walk-in sales before any real launch.
 7. Present three months as the default warranty and refer item-specific coverage to Uchenna.
+8. Evaluate a transaction-specific Pay with Transfer account as the preferred real-world payment UX; do not treat a reusable customer account as equivalent.
 
-## Follow-up questions
+## Remaining follow-up questions
 
-- Approximately how many WhatsApp payment checks does the shop perform in a typical week?
-- Roughly how many minutes does a normal check take, and how long can it take during bank downtime?
-- Has a fake alert ever caused a financial loss, or has manual checking caught every attempt so far?
 - Who besides Uchenna can update the stock book or confirm a payment?
 - Should the payment window be shorter than 30 minutes for fast-moving items?

@@ -6,15 +6,15 @@ Forward-deployed Engineering and Technical Product Management.
 
 ## Business context
 
-Jojo Gadgets is a real gadget business in Computer Village, Ikeja, Lagos. The owner is Uchenna Joseph Etokwudo. Discovery notes confirm the shop's transfer-and-receipt process, manual bank-app verification, financial loss from fake alerts, a customer dispute after a delayed payment reversed, manual stock book, suitability of a checkout link, and default three-month warranty. No incident frequency or loss amount was supplied, and the notes are paraphrased rather than verbatim quotations.
+Jojo Gadgets is a real gadget business in Computer Village, Ikeja, Lagos. The owner is Uchenna Joseph Etokwudo. Discovery notes confirm the shop's transfer-and-receipt process, manual bank-app verification, financial loss from fake alerts, a customer dispute after a delayed payment reversed, manual stock book, suitability of a checkout link or transaction-specific temporary account, and default three-month warranty. Depending on market activity, Uchenna checks tens of payments in a week and can approach roughly 100 in a busy week. He estimates cumulative fake-alert losses in the hundreds of thousands to millions of naira. These are owner-reported ranges, not audited figures, and all notes are paraphrased rather than verbatim quotations.
 
 All customer identities, phone numbers, inventory rows, prices, Paystack transactions, and detailed address data in the build are synthetic. The three-month default warranty comes from discovery, while its item-specific coverage and remedies remain unconfirmed.
 
 ## Problem statement draft
 
-Jojo Gadgets sells laptops, consoles, and phones from Computer Village, Ikeja. Customers pay by bank transfer and send a receipt to the shop's WhatsApp Business account, but fake alerts have caused real losses and one delayed payment that later reversed led to a customer dispute, so owner Uchenna Joseph Etokwudo still opens his bank app to confirm every credit. This Chord teammate replaces that manual matching step for agent-generated payments by quoting controlled test inventory, creating a Paystack test checkout with a unique reference, and allocating stock only after that reference is verified as paid. Delivery logistics, trade-ins, installments, negotiation, refunds, temporary virtual accounts, live credentials, and real customer data are deliberately outside the demonstration.
+Jojo Gadgets sells laptops, consoles, and phones from Computer Village, Ikeja. Customers pay by bank transfer and send a receipt to the shop's WhatsApp Business account, but fake alerts have caused owner-estimated cumulative losses in the hundreds of thousands to millions of naira. Depending on market activity, Uchenna checks tens of payments in a week and can approach roughly 100 in a busy week; every receipt interrupts him because he opens his bank app to confirm the credit. One delayed payment that later reversed also led to a customer dispute. This Chord teammate replaces that manual matching step for agent-generated payments by quoting controlled test inventory, creating a Paystack test checkout with a unique reference, and allocating stock only after that reference is verified as paid. Delivery logistics, trade-ins, installments, negotiation, refunds, direct temporary-account issuance, live credentials, and real customer data are deliberately outside the demonstration.
 
-The monetary value and frequency of fraud losses and the weekly volume of manual checks remain unmeasured, so the submission does not invent those figures.
+The volume and loss figures are intentionally expressed as owner-reported ranges. Verification time is not presented as a fabricated average: Uchenna checks when the receipt arrives, while downtime makes the wait unpredictable.
 
 ## Synthetic demo identity and policies
 
@@ -29,10 +29,8 @@ The confirmed details can be used in the test conversation. Item-specific warran
 
 ## Remaining discovery questions
 
-1. About how many WhatsApp payment checks happen in a typical week?
-2. How many minutes does a normal check take, and how long can it take during service downtime?
-3. Has a fake alert caused a financial loss, or has manual checking caught every attempt?
-4. Who besides Uchenna can update the stock book or confirm payment?
-5. What are the exact warranty exclusions, return terms, pickup process, and delivery policy?
+1. Who besides Uchenna can update the stock book or confirm payment?
+2. What are the exact warranty exclusions, return terms, pickup process, and delivery policy?
+3. Of the weekly payment checks, how many become delayed, disputed, or require a second check?
 
 Record the answers faithfully. One concrete quote and one measured fact are more useful than invented detail.
