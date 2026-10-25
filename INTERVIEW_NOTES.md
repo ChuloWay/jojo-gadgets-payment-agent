@@ -12,9 +12,9 @@ Customers pay by bank transfer and send the receipt to the shop's WhatsApp Busin
 
 ## Fraud and operational problem
 
-The business has previously dealt with scammers sending fake payment alerts. That experience is why Uchenna does not rely on the receipt or alert sent by the customer and always checks the bank application himself.
+The business has previously lost money because of scammers sending fake payment alerts. That experience is why Uchenna does not rely on the receipt or alert sent by the customer and always checks the bank application himself.
 
-When the bank service is unavailable or a transfer does not appear promptly, verification takes longer. Uchenna collects the customer's phone number so he can follow up after checking again.
+When the bank service is unavailable or a transfer does not appear promptly, verification takes longer. Uchenna collects the customer's phone number so he can follow up after checking again. In one case, a delayed payment was later reversed and caused a dispute because the customer would not resend the money immediately.
 
 ## Fit of the proposed payment flow
 
@@ -35,7 +35,7 @@ The default warranty is three months. It can vary depending on the deal under wh
 ## Product implications
 
 1. Never confirm payment from a customer receipt or alert.
-2. Match every checkout and verification attempt to a unique reference.
+2. Match every checkout and verification attempt to a unique reference, and never treat a pending, delayed, failed, or reversed provider status as paid.
 3. Capture the customer's phone number before payment so unresolved checks can be followed up.
 4. Keep unavailable verification pending and flag it for owner review.
 5. Do not promise an exclusive hold; allocate stock only after verified payment.

@@ -6,15 +6,15 @@ Forward-deployed Engineering and Technical Product Management.
 
 ## Business context
 
-Jojo Gadgets is a real gadget business in Computer Village, Ikeja, Lagos. The owner is Uchenna Joseph Etokwudo. Discovery notes confirm the shop's transfer-and-receipt process, manual bank-app verification, experience with fake alerts, manual stock book, suitability of a checkout link, and default three-month warranty. No incident rate or financial loss amount was supplied, and the notes are paraphrased rather than verbatim quotations.
+Jojo Gadgets is a real gadget business in Computer Village, Ikeja, Lagos. The owner is Uchenna Joseph Etokwudo. Discovery notes confirm the shop's transfer-and-receipt process, manual bank-app verification, financial loss from fake alerts, a customer dispute after a delayed payment reversed, manual stock book, suitability of a checkout link, and default three-month warranty. No incident frequency or loss amount was supplied, and the notes are paraphrased rather than verbatim quotations.
 
 All customer identities, phone numbers, inventory rows, prices, Paystack transactions, and detailed address data in the build are synthetic. The three-month default warranty comes from discovery, while its item-specific coverage and remedies remain unconfirmed.
 
 ## Problem statement draft
 
-Jojo Gadgets sells laptops, consoles, and phones from Computer Village, Ikeja. Customers pay by bank transfer and send a receipt to the shop's WhatsApp Business account, but owner Uchenna Joseph Etokwudo still opens his bank app to confirm the credit because the business has received fake payment alerts; during service downtime, he records the customer's number and follows up later. This Chord teammate replaces that manual matching step for agent-generated payments by quoting controlled test inventory, creating a Paystack test checkout with a unique reference, and allocating stock only after that reference is verified as paid. Delivery logistics, trade-ins, installments, negotiation, refunds, temporary virtual accounts, live credentials, and real customer data are deliberately outside the demonstration.
+Jojo Gadgets sells laptops, consoles, and phones from Computer Village, Ikeja. Customers pay by bank transfer and send a receipt to the shop's WhatsApp Business account, but fake alerts have caused real losses and one delayed payment that later reversed led to a customer dispute, so owner Uchenna Joseph Etokwudo still opens his bank app to confirm every credit. This Chord teammate replaces that manual matching step for agent-generated payments by quoting controlled test inventory, creating a Paystack test checkout with a unique reference, and allocating stock only after that reference is verified as paid. Delivery logistics, trade-ins, installments, negotiation, refunds, temporary virtual accounts, live credentials, and real customer data are deliberately outside the demonstration.
 
-The monetary value of attempted fraud and the weekly volume of manual checks remain unmeasured, so the submission does not invent either figure.
+The monetary value and frequency of fraud losses and the weekly volume of manual checks remain unmeasured, so the submission does not invent those figures.
 
 ## Synthetic demo identity and policies
 
