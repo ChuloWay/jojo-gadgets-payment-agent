@@ -12,6 +12,33 @@ const seedRows = [
   ['XPS13-512-REF', 'Dell XPS 13', 'laptop', 'refurbished', '512GB', 69_000_000, 1]
 ] as const;
 
+export async function ensureSeeded(connectionString: string): Promise<void> {
+  const pool = createPool(connectionString);
+  const client = await pool.connect();
+  let inserted = 0;
+  try {
+    await client.query('BEGIN');
+    for (const row of seedRows) {
+      const result = await client.query(
+        `INSERT INTO skus
+          (sku, name, category, condition, variant, price_kobo, qty_available)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (sku) DO NOTHING`,
+        [...row]
+      );
+      inserted += result.rowCount ?? 0;
+    }
+    await client.query('COMMIT');
+    process.stdout.write(`Ensured demo inventory; inserted ${inserted} missing SKUs\n`);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
 export async function seed(connectionString: string): Promise<void> {
   const pool = createPool(connectionString);
   const client = await pool.connect();

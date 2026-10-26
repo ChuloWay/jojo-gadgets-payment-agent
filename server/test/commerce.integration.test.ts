@@ -2,7 +2,7 @@ import pino from 'pino';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { seed } from '../src/db/seed.js';
+import { ensureSeeded, seed } from '../src/db/seed.js';
 import { createPool } from '../src/db/pool.js';
 import type { PaystackInitializeData, PaystackVerifyData } from '../src/domain/types.js';
 import type { AttemptRecorder, PaymentProvider } from '../src/paystack/client.js';
@@ -59,6 +59,22 @@ describeDatabase('CommerceService with PostgreSQL', () => {
     const match = (result.matches as Array<{ sku: string; quote_token: string }>)[0]!;
     return match;
   }
+
+  it('ensures missing demo inventory without resetting existing stock', async () => {
+    await pool.query('TRUNCATE owner_alerts, payment_events, orders, quotes, skus RESTART IDENTITY CASCADE');
+
+    await ensureSeeded(testDatabaseUrl!);
+    const initial = await pool.query<{ count: string }>('SELECT count(*)::text AS count FROM skus');
+    expect(initial.rows[0]?.count).toBe('6');
+
+    await pool.query('UPDATE skus SET qty_available = 0 WHERE sku = $1', ['PS5-DISC-NEW']);
+    await ensureSeeded(testDatabaseUrl!);
+    const preserved = await pool.query<{ qty_available: number }>(
+      'SELECT qty_available FROM skus WHERE sku = $1',
+      ['PS5-DISC-NEW']
+    );
+    expect(preserved.rows[0]?.qty_available).toBe(0);
+  });
 
   it('creates one checkout and reuses it for a duplicate request', async () => {
     const provider = new FakeProvider();
