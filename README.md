@@ -53,7 +53,11 @@ Do not commit `.env`, Chord credentials, Paystack keys, customer data, or real p
 
 ## Deploy and connect Chord
 
-1. Deploy this repository from the `Dockerfile` with a persistent PostgreSQL database. Set all environment variables, use `npm run db:migrate:prod` as the release/predeploy command, then run `npm run seed:prod` once for the demo.
+The included `render.yaml` creates a Frankfurt web service and PostgreSQL database, runs migrations before each deploy, seeds the synthetic demo inventory after the first deploy, and generates the MCP bearer token. It deliberately prompts for `PAYSTACK_SECRET_KEY` instead of storing it in Git.
+
+The Blueprint selects Render's free demo plans. These are suitable for this assessment, not production: the web service can cold-start after being idle and the free database expires after 30 days.
+
+1. In Render, create a Blueprint from this repository and enter a **Paystack test** secret when prompted. Never use a live key for the exercise.
 2. Confirm `GET https://<host>/healthz` returns `{"status":"ok"}`.
 3. In Chord, register `https://<host>/mcp` as a Streamable HTTP MCP server using bearer authentication. Store the same value as `MCP_BEARER_TOKEN` in the connection.
 4. Run Chord tool discovery and health. Restrict `enabled_tools` to the three tool names above, then explicitly assign that MCP server to the teammate.

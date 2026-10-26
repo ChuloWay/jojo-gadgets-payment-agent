@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: jojo-gadgets-payment-agent
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: main
+    autoDeployTrigger: commit
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    preDeployCommand: npm run db:migrate:prod
+    initialDeployHook: npm run seed:prod
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: jojo-gadgets-db
+          property: connectionString
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_BASE_URL
+        value: https://api.paystack.co
+      - key: MCP_BEARER_TOKEN
+        generateValue: true
+      - key: PAYMENT_WINDOW_MINUTES
+        value: "30"
+      - key: DEMO_MODE
+        value: "false"
+      - key: LOG_LEVEL
+        value: info
+
+databases:
+  - name: jojo-gadgets-db
+    plan: free
+    region: frankfurt
+    postgresMajorVersion: "16"
+    databaseName: gadget_agent
+    user: gadget_agent
+    ipAllowList: []
