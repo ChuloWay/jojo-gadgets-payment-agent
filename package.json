@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch server/src/index.ts",
     "start": "node dist/server/src/index.js",
+    "start:prod": "npm run db:migrate:prod && npm run start",
     "db:migrate": "node --import tsx server/src/db/migrate.ts",
     "db:migrate:prod": "node dist/server/src/db/migrate.js",
     "seed": "node --import tsx server/src/db/seed.ts",

@@ -53,7 +53,7 @@ Do not commit `.env`, Chord credentials, Paystack keys, customer data, or real p
 
 ## Deploy and connect Chord
 
-The included `render.yaml` creates a Frankfurt web service and PostgreSQL database, runs migrations before each deploy, seeds the synthetic demo inventory after the first deploy, and generates the MCP bearer token. It deliberately prompts for `PAYSTACK_SECRET_KEY` instead of storing it in Git.
+The included `render.yaml` creates a Frankfurt web service and PostgreSQL database, seeds the synthetic demo inventory after the first deploy, and generates the MCP bearer token. The production container applies idempotent migrations before starting the server because Render's free web tier does not support pre-deploy commands. The Blueprint deliberately prompts for `PAYSTACK_SECRET_KEY` instead of storing it in Git.
 
 The Blueprint selects Render's free demo plans. These are suitable for this assessment, not production: the web service can cold-start after being idle and the free database expires after 30 days.
 

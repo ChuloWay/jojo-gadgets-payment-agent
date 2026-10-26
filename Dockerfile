@@ -14,4 +14,4 @@ RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY server/src/db/migrations ./server/src/db/migrations
 EXPOSE 3000
-CMD ["node", "dist/server/src/index.js"]
+CMD ["npm", "run", "start:prod"]

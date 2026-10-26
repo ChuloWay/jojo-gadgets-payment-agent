@@ -9,7 +9,6 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /healthz
-    preDeployCommand: npm run db:migrate:prod
     initialDeployHook: npm run seed:prod
     envVars:
       - key: DATABASE_URL
