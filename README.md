@@ -57,9 +57,11 @@ The included `render.yaml` creates a Frankfurt web service and PostgreSQL databa
 
 The Blueprint selects Render's free demo plans. These are suitable for this assessment, not production: the web service can cold-start after being idle and the free database expires after 30 days.
 
+The assessment deployment is live at `https://jojo-gadgets-payment-agent.onrender.com`. Its MCP endpoint is `https://jojo-gadgets-payment-agent.onrender.com/mcp` and its health endpoint is `https://jojo-gadgets-payment-agent.onrender.com/healthz`.
+
 1. In Render, create a Blueprint from this repository and enter a **Paystack test** secret when prompted. Never use a live key for the exercise.
-2. Confirm `GET https://<host>/healthz` returns `{"status":"ok"}`.
-3. In Chord, register `https://<host>/mcp` as a Streamable HTTP MCP server using bearer authentication. Store the same value as `MCP_BEARER_TOKEN` in the connection.
+2. Confirm `GET https://jojo-gadgets-payment-agent.onrender.com/healthz` returns `{"status":"ok"}`.
+3. In Chord, register `https://jojo-gadgets-payment-agent.onrender.com/mcp` as a Streamable HTTP MCP server using bearer authentication. Store the same value as `MCP_BEARER_TOKEN` in the connection.
 4. Run Chord tool discovery and health. Restrict `enabled_tools` to the three tool names above, then explicitly assign that MCP server to the teammate.
 5. Upload [skills/SKILL.md](skills/SKILL.md), mark it as Instructions, review, publish, and activate the teammate.
 6. Connect the external WhatsApp simulator application and run an in-app text test before spending credits on the recorded flow.
