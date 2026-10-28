@@ -34,6 +34,14 @@ Add a factual entry whenever the build, documentation, simulator, or provider be
 - **Fix or workaround:** Enabled the organization-wide Chord Connect switch, retried OAuth, approved the requested scopes, and created the Jojo Gadgets simulator link without starting another conversation.
 - **What Chord should change:** The OAuth error should distinguish an app-specific denial from the organization-wide master switch and link directly to the disabled setting. The app row should not appear “Allowed” without an adjacent warning when the master switch makes that state ineffective.
 
+## Simulator displayed Markdown literally and exposed exact stock
+
+- **When:** First paid end-to-end simulator conversation, 28 October 2026
+- **What happened:** The teammate completed the quote, checkout, and verified-payment flow, but customer messages displayed Markdown markers such as `**Item:**` literally. The quote also said “Only 1 unit available,” exposing an internal inventory count that the customer did not need.
+- **How I found the cause:** Reviewed the visible WhatsApp simulator transcript after the successful payment. Chord passed the teammate's Markdown-style reply through without rendering the emphasis markers, and the model repeated the tool's numeric `available` value.
+- **Fix or workaround:** Published a stricter skill style policy: plain WhatsApp text only, no Markdown syntax, exact quantities remain internal, positive stock is described only as available, and zero stock is described as sold out. Every new purchase request must perform a fresh stock lookup.
+- **What Chord should change:** Document the simulator's supported message formatting and provide a channel-aware rendering preview or lint warning when teammate output contains unsupported Markdown.
+
 ## Entry template
 
 - **When:** Step and timestamp
