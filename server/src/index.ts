@@ -24,9 +24,17 @@ const sweep = setInterval(() => {
 }, 60_000);
 sweep.unref();
 
+const webhookSweep = setInterval(() => {
+  void commerce.processPendingPaystackWebhooks(25).then((count) => {
+    if (count > 0) logger.info({ count }, 'processed queued Paystack webhook events');
+  }).catch((error) => logger.error({ error }, 'Paystack webhook queue sweep failed'));
+}, 30_000);
+webhookSweep.unref();
+
 async function shutdown(signal: string) {
   logger.info({ signal }, 'shutting down');
   clearInterval(sweep);
+  clearInterval(webhookSweep);
   server.close(async () => {
     await pool.end();
     process.exit(0);

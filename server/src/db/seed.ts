@@ -44,7 +44,7 @@ export async function seed(connectionString: string): Promise<void> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query('TRUNCATE owner_alerts, payment_events, orders, quotes, skus RESTART IDENTITY CASCADE');
+    await client.query('TRUNCATE paystack_webhook_events, owner_alerts, payment_events, orders, quotes, skus RESTART IDENTITY CASCADE');
     for (const row of seedRows) {
       await client.query(
         `INSERT INTO skus

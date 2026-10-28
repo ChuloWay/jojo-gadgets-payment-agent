@@ -339,6 +339,72 @@ describeDatabase('CommerceService with PostgreSQL', () => {
     expect(events.rows[0]?.count).toBe(1);
   });
 
+  it('deduplicates webhooks and finalizes concurrent customers by exact reference', async () => {
+    const provider = new FakeProvider();
+    const service = new CommerceService(pool, provider, 30, logger);
+    const firstQuoteResult = await service.checkStock({ sku: 'IP13-128-UK' });
+    const secondQuoteResult = await service.checkStock({ sku: 'IP13-128-UK' });
+    const firstQuote = (firstQuoteResult.matches as Array<{ sku: string; quote_token: string }>)[0]!;
+    const secondQuote = (secondQuoteResult.matches as Array<{ sku: string; quote_token: string }>)[0]!;
+    const first = await service.createPayment({
+      sku: firstQuote.sku,
+      quoteToken: firstQuote.quote_token,
+      customerPhone: '07000000001',
+      customerName: 'Webhook Buyer One'
+    });
+    const second = await service.createPayment({
+      sku: secondQuote.sku,
+      quoteToken: secondQuote.quote_token,
+      customerPhone: '07000000002',
+      customerName: 'Webhook Buyer Two'
+    });
+    const firstReference = first.reference as string;
+    const secondReference = second.reference as string;
+    provider.verifyByReference.set(firstReference, {
+      status: 'success', reference: firstReference, amount: 52_000_000, currency: 'NGN', domain: 'test'
+    });
+    provider.verifyByReference.set(secondReference, {
+      status: 'success', reference: secondReference, amount: 52_000_000, currency: 'NGN', domain: 'test'
+    });
+
+    const firstEvent = {
+      eventKey: 'paystack:charge.success:1001',
+      eventType: 'charge.success' as const,
+      providerTransactionId: '1001',
+      reference: firstReference,
+      payload: { event: 'charge.success', data: { id: 1001, reference: firstReference } }
+    };
+    expect(await service.enqueuePaystackWebhook(firstEvent)).toBe(true);
+    expect(await service.enqueuePaystackWebhook(firstEvent)).toBe(false);
+    expect(await service.enqueuePaystackWebhook({
+      eventKey: 'paystack:charge.success:1002',
+      eventType: 'charge.success',
+      providerTransactionId: '1002',
+      reference: secondReference,
+      payload: { event: 'charge.success', data: { id: 1002, reference: secondReference } }
+    })).toBe(true);
+
+    expect(await service.processPendingPaystackWebhooks(10)).toBe(2);
+    expect(provider.verifyCalls).toBe(2);
+    const orders = await pool.query(
+      'SELECT reference, customer_phone, status FROM orders WHERE reference = ANY($1::text[]) ORDER BY customer_phone',
+      [[firstReference, secondReference]]
+    );
+    expect(orders.rows).toEqual([
+      { reference: firstReference, customer_phone: '07000000001', status: 'PAID' },
+      { reference: secondReference, customer_phone: '07000000002', status: 'PAID' }
+    ]);
+    const stock = await pool.query('SELECT qty_available FROM skus WHERE sku = $1', ['IP13-128-UK']);
+    expect(stock.rows[0]?.qty_available).toBe(1);
+    const events = await pool.query(
+      'SELECT provider_transaction_id, order_reference, status FROM paystack_webhook_events ORDER BY provider_transaction_id'
+    );
+    expect(events.rows).toEqual([
+      { provider_transaction_id: '1001', order_reference: firstReference, status: 'PROCESSED' },
+      { provider_transaction_id: '1002', order_reference: secondReference, status: 'PROCESSED' }
+    ]);
+  });
+
   it('validates and records a delivery request without promising dispatch', async () => {
     const provider = new FakeProvider();
     const service = new CommerceService(pool, provider, 30, logger);

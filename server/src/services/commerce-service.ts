@@ -339,6 +339,90 @@ export class CommerceService {
     };
   }
 
+  async enqueuePaystackWebhook(input: {
+    eventKey: string;
+    eventType: 'charge.success';
+    providerTransactionId: string;
+    reference: string;
+    payload: unknown;
+  }): Promise<boolean> {
+    const inserted = await this.pool.query(
+      `INSERT INTO paystack_webhook_events (
+         event_key, event_type, provider_transaction_id, order_reference, payload, status
+       ) VALUES ($1, $2, $3, $4, $5::jsonb, 'RECEIVED')
+       ON CONFLICT (event_key) DO NOTHING`,
+      [input.eventKey, input.eventType, input.providerTransactionId, input.reference, JSON.stringify(input.payload)]
+    );
+    return inserted.rowCount === 1;
+  }
+
+  async processPendingPaystackWebhooks(limit = 25): Promise<number> {
+    const boundedLimit = Math.max(1, Math.min(limit, 100));
+    const client = await this.pool.connect();
+    let claimed: Array<{ event_key: string; order_reference: string; attempts: number }> = [];
+    try {
+      await client.query('BEGIN');
+      const result = await client.query<{ event_key: string; order_reference: string; attempts: number }>(
+        `WITH claimable AS (
+           SELECT event_key
+           FROM paystack_webhook_events
+           WHERE attempts < 10
+             AND (
+               (status IN ('RECEIVED', 'FAILED') AND next_attempt_at <= now())
+               OR (status = 'PROCESSING' AND updated_at <= now() - interval '5 minutes')
+             )
+           ORDER BY received_at
+           FOR UPDATE SKIP LOCKED
+           LIMIT $1
+         )
+         UPDATE paystack_webhook_events AS event
+         SET status = 'PROCESSING', attempts = event.attempts + 1, updated_at = now()
+         FROM claimable
+         WHERE event.event_key = claimable.event_key
+         RETURNING event.event_key, event.order_reference, event.attempts`,
+        [boundedLimit]
+      );
+      claimed = result.rows;
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    for (const event of claimed) {
+      try {
+        const result = await this.verifyPayment(event.order_reference);
+        if (result.status === 'verification_unavailable') {
+          throw new Error('Provider verification remained unavailable');
+        }
+        await this.pool.query(
+          `UPDATE paystack_webhook_events
+           SET status = $2, result_status = $3, last_error = NULL,
+               processed_at = now(), updated_at = now()
+           WHERE event_key = $1`,
+          [event.event_key, result.status === 'unknown_reference' ? 'IGNORED' : 'PROCESSED', result.status]
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown webhook processing failure';
+        const delaySeconds = Math.min(3600, 30 * (2 ** Math.min(event.attempts - 1, 7)));
+        await this.pool.query(
+          `UPDATE paystack_webhook_events
+           SET status = 'FAILED', last_error = $2,
+               next_attempt_at = now() + ($3 * interval '1 second'), updated_at = now()
+           WHERE event_key = $1`,
+          [event.event_key, message.slice(0, 500), delaySeconds]
+        );
+        this.logger.error({ error, eventKey: event.event_key, reference: event.order_reference }, 'Paystack webhook processing failed');
+        if (event.attempts >= 10) {
+          await this.alert(event.order_reference, 'Automatic Paystack webhook verification failed after retry policy');
+        }
+      }
+    }
+    return claimed.length;
+  }
+
   async captureFulfillmentPreference(input: {
     reference: string;
     method: 'pickup' | 'delivery_request';
@@ -457,7 +541,7 @@ export class CommerceService {
         contact_phone: contactPhone,
         message_for_agent: input.method === 'pickup'
           ? 'Say the preferred pickup time was recorded for owner review. Uchenna needs to confirm the exact collection time and shop details before the customer comes; do not claim he was directly notified.'
-          : 'Say the delivery request was recorded for owner review. Uchenna needs to confirm availability, cost, and timing before dispatch; do not say delivery is booked or that he was directly notified.'
+          : 'Say the delivery request was recorded for owner review. Uchenna needs to confirm availability, cost, and timing before dispatch. Do not say delivery is booked or that he was directly notified.'
       };
     } catch (error) {
       await client.query('ROLLBACK');
