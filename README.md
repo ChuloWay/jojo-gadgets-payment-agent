@@ -12,7 +12,7 @@ WhatsApp simulator → Chord teammate + SKILL.md → Streamable HTTP MCP server
                                                    └─ Paystack test API
 ```
 
-The MCP server exposes exactly three tools: `check_stock_and_quote`, `create_payment`, and `verify_payment`. Quote tokens bind the price the customer accepted to checkout creation. Orders are persisted as `INITIALIZING` before Paystack is called, and database locks allocate stock exactly once when payment is verified. Creating a checkout does not reserve stock, matching the business's fast-moving Computer Village sales process.
+The MCP server exposes four tools: `check_stock_and_quote`, `create_payment`, `verify_payment`, and `capture_fulfillment_preference`. Quote tokens bind the price the customer accepted to checkout creation. Orders are persisted as `INITIALIZING` before Paystack is called, and database locks allocate stock exactly once when payment is verified. Creating a checkout does not reserve stock, matching the business's fast-moving Computer Village sales process. After payment, the fourth tool stores a pickup-time preference or delivery request for owner confirmation without promising an appointment, fee, or dispatch.
 
 ## Local setup
 
@@ -64,7 +64,7 @@ The active Chord teammate is **Jojo Gadgets Sales Assistant**. Its WhatsApp-styl
 1. In Render, create a Blueprint from this repository and enter a **Paystack test** secret when prompted. Never use a live key for the exercise.
 2. Confirm `GET https://jojo-gadgets-payment-agent.onrender.com/healthz` returns `{"status":"ok"}`.
 3. In Chord, register `https://jojo-gadgets-payment-agent.onrender.com/mcp` as a Streamable HTTP MCP server using bearer authentication. Store the same value as `MCP_BEARER_TOKEN` in the connection.
-4. Run Chord tool discovery and health and restrict the server's allowed tools to the three tool names above. Chord exposes enabled custom MCP servers to the teammate; confirm this from an actual teammate tool trace rather than expecting the connector in the built-in-tool switch list.
+4. Run Chord tool discovery and health and restrict the server's allowed tools to the four tool names above. Chord exposes enabled custom MCP servers to the teammate; confirm this from an actual teammate tool trace rather than expecting the connector in the built-in-tool switch list.
 5. Upload [skills/SKILL.md](skills/SKILL.md), mark it as Instructions, review, publish, and activate the teammate.
 6. Enable both the organization-wide **Allow approved apps** switch and the **Whatsapp Simulator** app, authorize the simulator, and create the chat link. One in-app text test confirmed the teammate could call the MCP quote tool; further conversation turns are reserved for the recorded flow to conserve credits.
 
@@ -74,14 +74,15 @@ The active Chord teammate is **Jojo Gadgets Sales Assistant**. Its WhatsApp-styl
 2. Agree to buy. The teammate sends the Paystack test link, reference, and payment-window expiry and explains that stock is allocated after verified payment.
 3. Send a fake payment screenshot without checking out. The teammate rejects it as evidence, verifies the reference, and reports that no successful payment exists.
 4. Pay through Paystack test checkout and say “Done, I’ve paid.” The teammate verifies the reference and sends the receipt details.
-5. Say “I’ve paid” again. Verification returns the stored paid order without changing inventory or calling Paystack again.
-6. Ask for the same PS5 as another demo customer and show that it is unavailable.
+5. Choose pickup and give a preferred arrival time. The teammate records the preference and states that Uchenna must confirm it.
+6. Say “I’ve paid” again. Verification returns the stored paid order without changing inventory or calling Paystack again.
+7. Ask for the same PS5 as another demo customer and show that it is unavailable.
 
 Use Paystack's currently documented test details from its official test-payments page. Do not put card data into the chat.
 
 ## Scope and limitations
 
-This demo verifies payments initiated through its Paystack checkout. It does not reconcile arbitrary bank transfers. Underpayment is detected and flagged for owner review; automated top-ups, refunds, delivery, trade-ins, live WhatsApp, webhooks, and real owner notifications are outside this build.
+This demo verifies payments initiated through its Paystack checkout. It does not reconcile arbitrary bank transfers. Underpayment is detected and flagged for owner review. A delivery request can be recorded, but delivery pricing, availability, courier dispatch, and tracking are not automated. Automated top-ups, refunds, trade-ins, live WhatsApp, webhooks, and real owner notifications remain outside this build.
 
 Owner alerts are durable database records and structured logs. Customer copy therefore says “flagged for owner review,” not that a notification was delivered.
 

@@ -339,6 +339,134 @@ export class CommerceService {
     };
   }
 
+  async captureFulfillmentPreference(input: {
+    reference: string;
+    method: 'pickup' | 'delivery_request';
+    preferredTime?: string | undefined;
+    deliveryArea?: string | undefined;
+    landmark?: string | undefined;
+    recipientName?: string | undefined;
+    contactPhone?: string | undefined;
+  }): Promise<ToolResult> {
+    const preferredTime = input.preferredTime?.trim() || null;
+    const deliveryArea = input.deliveryArea?.trim() || null;
+    const landmark = input.landmark?.trim() || null;
+    const recipientName = input.recipientName?.trim() || null;
+    const suppliedPhone = input.contactPhone?.trim() || null;
+
+    if (input.method === 'pickup' && !preferredTime) {
+      return {
+        status: 'invalid_request',
+        message_for_agent: 'Ask for the customer\'s preferred pickup date and approximate arrival time.'
+      };
+    }
+    if (input.method === 'delivery_request' && (!deliveryArea || !recipientName || !suppliedPhone)) {
+      return {
+        status: 'invalid_request',
+        message_for_agent: 'Ask for the delivery area, recipient name, and phone number to call. A landmark is optional.'
+      };
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const orderResult = await client.query<OrderRow>(
+        'SELECT * FROM orders WHERE reference = $1 FOR UPDATE',
+        [input.reference]
+      );
+      const order = orderResult.rows[0];
+      if (!order) {
+        await client.query('ROLLBACK');
+        return {
+          status: 'unknown_reference',
+          message_for_agent: 'No order has that reference. Ask the customer to check it.'
+        };
+      }
+      if (order.status !== 'PAID') {
+        await client.query('ROLLBACK');
+        return {
+          status: 'payment_not_confirmed',
+          reference: input.reference,
+          message_for_agent: 'Fulfilment details can be recorded only after payment is verified and stock is allocated.'
+        };
+      }
+
+      const contactPhone = suppliedPhone ?? order.customer_phone;
+      const existing = await client.query<{
+        method: string;
+        preferred_time: string | null;
+        delivery_area: string | null;
+        landmark: string | null;
+        recipient_name: string | null;
+        contact_phone: string;
+        status: string;
+      }>('SELECT * FROM order_fulfillments WHERE order_reference = $1 FOR UPDATE', [input.reference]);
+      const current = existing.rows[0];
+      const unchanged = current
+        && current.method === input.method
+        && current.preferred_time === preferredTime
+        && current.delivery_area === deliveryArea
+        && current.landmark === landmark
+        && current.recipient_name === recipientName
+        && current.contact_phone === contactPhone;
+
+      if (!unchanged) {
+        await client.query(
+          `INSERT INTO order_fulfillments (
+             order_reference, method, preferred_time, delivery_area, landmark,
+             recipient_name, contact_phone, status
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING_OWNER_CONFIRMATION')
+           ON CONFLICT (order_reference) DO UPDATE SET
+             method = EXCLUDED.method,
+             preferred_time = EXCLUDED.preferred_time,
+             delivery_area = EXCLUDED.delivery_area,
+             landmark = EXCLUDED.landmark,
+             recipient_name = EXCLUDED.recipient_name,
+             contact_phone = EXCLUDED.contact_phone,
+             status = 'PENDING_OWNER_CONFIRMATION',
+             updated_at = now()`,
+          [input.reference, input.method, preferredTime, deliveryArea, landmark, recipientName, contactPhone]
+        );
+        await this.event(client, input.reference, current ? 'FULFILLMENT_PREFERENCE_UPDATED' : 'FULFILLMENT_PREFERENCE_RECORDED', {
+          method: input.method,
+          preferred_time: preferredTime,
+          delivery_area: deliveryArea,
+          landmark,
+          recipient_name: recipientName,
+          contact_phone: contactPhone
+        });
+        await this.insertAlert(
+          client,
+          input.reference,
+          input.method === 'pickup'
+            ? 'Pickup time preference requires owner confirmation'
+            : 'Delivery request requires owner confirmation, pricing, and availability review'
+        );
+      }
+      await client.query('COMMIT');
+
+      return {
+        status: 'recorded_pending_owner_confirmation',
+        already_recorded: Boolean(unchanged),
+        reference: input.reference,
+        method: input.method,
+        preferred_time: preferredTime,
+        delivery_area: deliveryArea,
+        landmark,
+        recipient_name: recipientName,
+        contact_phone: contactPhone,
+        message_for_agent: input.method === 'pickup'
+          ? 'Say the preferred pickup time was recorded for owner review. Uchenna needs to confirm the exact collection time and shop details before the customer comes; do not claim he was directly notified.'
+          : 'Say the delivery request was recorded for owner review. Uchenna needs to confirm availability, cost, and timing before dispatch; do not say delivery is booked or that he was directly notified.'
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async sweepExpired(limit = 100): Promise<number> {
     const client = await this.pool.connect();
     try {
@@ -544,7 +672,7 @@ export class CommerceService {
       item: order.name ? `${order.name} (${order.condition}, ${order.variant})` : order.sku,
       amount_ngn: koboToNaira(amount),
       paid_at: order.paid_at?.toISOString() ?? null,
-      message_for_agent: 'Payment is verified. Confirm the item, amount, and reference and say the owner will confirm collection details.'
+      message_for_agent: 'Payment is verified. Send a concise WhatsApp payment receipt with the item, amount, reference, payment status, and a thank-you. State that the default warranty is 3 months subject to confirmation for the unit, then ask whether the customer prefers shop pickup or wants Uchenna to review a delivery request. Do not describe it as a tax invoice.'
     };
   }
 

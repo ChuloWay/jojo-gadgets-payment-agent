@@ -289,7 +289,93 @@ describeDatabase('CommerceService with PostgreSQL', () => {
     expect(order.rows[0]?.status).toBe('PAID_NEEDS_OWNER');
   });
 
-  it('publishes exactly the three intended MCP tools with their schemas', async () => {
+  it('records a pickup preference only after payment and remains idempotent', async () => {
+    const provider = new FakeProvider();
+    const service = new CommerceService(pool, provider, 30, logger);
+    const quote = await ps5Quote(service);
+    const created = await service.createPayment({
+      sku: quote.sku,
+      quoteToken: quote.quote_token,
+      customerPhone: '+2348000000101',
+      customerName: 'Pickup Buyer'
+    });
+    const reference = created.reference as string;
+
+    expect(await service.captureFulfillmentPreference({
+      reference,
+      method: 'pickup',
+      preferredTime: 'Tomorrow around 2 PM'
+    })).toMatchObject({ status: 'payment_not_confirmed' });
+
+    provider.verifyByReference.set(reference, {
+      status: 'success', reference, amount: 78_000_000, currency: 'NGN', domain: 'test'
+    });
+    await service.verifyPayment(reference);
+
+    const first = await service.captureFulfillmentPreference({
+      reference,
+      method: 'pickup',
+      preferredTime: 'Tomorrow around 2 PM'
+    });
+    const repeated = await service.captureFulfillmentPreference({
+      reference,
+      method: 'pickup',
+      preferredTime: 'Tomorrow around 2 PM'
+    });
+
+    expect(first).toMatchObject({ status: 'recorded_pending_owner_confirmation', already_recorded: false });
+    expect(repeated).toMatchObject({ status: 'recorded_pending_owner_confirmation', already_recorded: true });
+    const stored = await pool.query('SELECT * FROM order_fulfillments WHERE order_reference = $1', [reference]);
+    expect(stored.rows[0]).toMatchObject({
+      method: 'pickup',
+      preferred_time: 'Tomorrow around 2 PM',
+      contact_phone: '+2348000000101',
+      status: 'PENDING_OWNER_CONFIRMATION'
+    });
+    const events = await pool.query(
+      "SELECT count(*)::int AS count FROM payment_events WHERE order_reference = $1 AND event_type = 'FULFILLMENT_PREFERENCE_RECORDED'",
+      [reference]
+    );
+    expect(events.rows[0]?.count).toBe(1);
+  });
+
+  it('validates and records a delivery request without promising dispatch', async () => {
+    const provider = new FakeProvider();
+    const service = new CommerceService(pool, provider, 30, logger);
+    const quote = await ps5Quote(service);
+    const created = await service.createPayment({
+      sku: quote.sku,
+      quoteToken: quote.quote_token,
+      customerPhone: '+2348000000102',
+      customerName: 'Delivery Buyer'
+    });
+    const reference = created.reference as string;
+    provider.verifyByReference.set(reference, {
+      status: 'success', reference, amount: 78_000_000, currency: 'NGN', domain: 'test'
+    });
+    await service.verifyPayment(reference);
+
+    expect(await service.captureFulfillmentPreference({ reference, method: 'delivery_request' }))
+      .toMatchObject({ status: 'invalid_request' });
+
+    const result = await service.captureFulfillmentPreference({
+      reference,
+      method: 'delivery_request',
+      deliveryArea: 'Ikeja',
+      landmark: 'Demo landmark',
+      recipientName: 'Synthetic Customer',
+      contactPhone: '07000000000'
+    });
+
+    expect(result).toMatchObject({
+      status: 'recorded_pending_owner_confirmation',
+      method: 'delivery_request',
+      delivery_area: 'Ikeja'
+    });
+    expect(result.message_for_agent).toContain('Do not say delivery is booked');
+  });
+
+  it('publishes exactly the four intended MCP tools with their schemas', async () => {
     const provider = new FakeProvider();
     const service = new CommerceService(pool, provider, 30, logger);
     const server = createMcpServer(service);
@@ -299,6 +385,7 @@ describeDatabase('CommerceService with PostgreSQL', () => {
     try {
       const discovered = await client.listTools();
       expect(discovered.tools.map((tool) => tool.name).sort()).toEqual([
+        'capture_fulfillment_preference',
         'check_stock_and_quote',
         'create_payment',
         'verify_payment'
