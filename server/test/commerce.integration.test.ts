@@ -341,7 +341,13 @@ describeDatabase('CommerceService with PostgreSQL', () => {
 
   it('deduplicates webhooks and finalizes concurrent customers by exact reference', async () => {
     const provider = new FakeProvider();
-    const service = new CommerceService(pool, provider, 30, logger);
+    const notifications: string[] = [];
+    const service = new CommerceService(pool, provider, 30, logger, undefined, {
+      async notifyPaid(order) {
+        notifications.push(order.reference);
+        return 'sent';
+      }
+    });
     const firstQuoteResult = await service.checkStock({ sku: 'IP13-128-UK' });
     const secondQuoteResult = await service.checkStock({ sku: 'IP13-128-UK' });
     const firstQuote = (firstQuoteResult.matches as Array<{ sku: string; quote_token: string }>)[0]!;
@@ -386,6 +392,7 @@ describeDatabase('CommerceService with PostgreSQL', () => {
 
     expect(await service.processPendingPaystackWebhooks(10)).toBe(2);
     expect(provider.verifyCalls).toBe(2);
+    expect(notifications.sort()).toEqual([firstReference, secondReference].sort());
     const orders = await pool.query(
       'SELECT reference, customer_phone, status FROM orders WHERE reference = ANY($1::text[]) ORDER BY customer_phone',
       [[firstReference, secondReference]]

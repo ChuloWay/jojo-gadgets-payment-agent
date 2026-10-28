@@ -65,6 +65,14 @@ Add a factual entry whenever the build, documentation, simulator, or provider be
 - **Fix or workaround:** Split catalogue exploration into short, category-specific questions. Phone and laptop searches then returned correctly, while the sold-out PlayStation request was handled without exposing internal stock counts.
 - **What Chord should change:** Distinguish a channel-delivery timeout from an agent-generation failure, surface completed late replies in the simulator, and avoid charging or encouraging a retry when the dashboard already has a valid response.
 
+## Proactive thread messaging exists, but only as an operator-authored turn
+
+- **When:** Adding automatic post-payment confirmation, 28 October 2026
+- **What happened:** Chord's event-subscription API can run a teammate from an external event, but its documented contract explicitly creates no conversation or thread and returns the result only by webhook. The thread API can deliver into the existing simulator conversation, but only through `POST /v1/threads/{id}/messages` after takeover; the persisted sender is `human_operator`, not the teammate.
+- **How I found the cause:** Compared the current Event subscriptions, Threads and handoff, Chat, Permissions, and OpenAPI documentation. The OpenAPI contract exposes no agent-authored proactive endpoint for an existing channel thread. The dashboard API-key form also omitted the documented `thread:read` and `thread:write` scopes even though its authenticated key endpoint accepted those exact least-privilege scopes.
+- **Fix or workaround:** The payment service uses a server-only key holding only `thread:read` and `thread:write`. It searches recent Jojo external-chat threads, verifies an agent-authored checkout turn contains the exact Paystack reference and checkout URL, refuses zero or multiple matches, deduplicates already delivered receipts, then takes over, sends an explicitly automatic receipt, and hands control back. No name, phone, amount, or timestamp is used as the routing key.
+- **What Chord should change:** Add an agent-authored proactive message endpoint for an existing thread, with a caller-supplied idempotency key and normal channel delivery status. Expose `thread:read` and `thread:write` in the API-key form, and document whether automated operator messages consume credits.
+
 ## Entry template
 
 - **When:** Step and timestamp

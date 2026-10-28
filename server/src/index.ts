@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import pino from 'pino';
 import { createApp } from './app.js';
+import { ChordClient } from './chord/client.js';
 import { loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
 import { PaystackClient } from './paystack/client.js';
@@ -10,7 +11,16 @@ const config = loadConfig();
 const logger = pino({ level: config.logLevel, redact: ['req.headers.authorization'] });
 const pool = createPool(config.databaseUrl);
 const provider = new PaystackClient(config.paystackSecretKey, config.paystackBaseUrl);
-const commerce = new CommerceService(pool, provider, config.paymentWindowMinutes, logger);
+const paidOrderNotifier = config.chordProactiveNotifications
+  ? new ChordClient(
+      config.chordApiBaseUrl,
+      config.chordApiKey!,
+      config.chordWorkspaceId!,
+      config.chordTeammateId!,
+      logger
+    )
+  : undefined;
+const commerce = new CommerceService(pool, provider, config.paymentWindowMinutes, logger, undefined, paidOrderNotifier);
 const app = createApp({ config, pool, commerce, logger });
 
 const server = app.listen(config.port, '0.0.0.0', () => {

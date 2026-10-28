@@ -16,6 +16,8 @@ The MCP server exposes four tools: `check_stock_and_quote`, `create_payment`, `v
 
 Paystack can also finalize an order without waiting for the customer to type “paid.” `POST /webhooks/paystack` validates the HMAC-SHA512 signature over the exact raw body, durably deduplicates `charge.success` events by provider transaction ID, and re-verifies the exact internal reference with Paystack before using the same locked stock-allocation path. Only the event type, provider transaction ID, and internal reference are retained from the webhook; unnecessary customer and payment payload fields are discarded. A persistent retry queue recovers from transient verification failures. Events for other Paystack integrations are acknowledged and ignored rather than misapplied to a Jojo Gadgets order.
 
+After successful allocation, the backend proactively delivers a plain-text receipt through Chord's supported thread channel API. It locates the unique external-chat thread containing an agent-authored checkout turn with that exact reference, refuses ambiguous or missing routes, checks for an already delivered paid receipt, temporarily takes over the thread, sends the receipt, and hands control straight back to the teammate. Chord currently records this supported proactive channel write as `human_operator`, because it exposes no agent-authored proactive endpoint for an existing channel thread; the text identifies itself as an automatic payment confirmation rather than impersonating a human.
+
 ## Local setup
 
 Requirements: Node.js 22+ and PostgreSQL 14+ (or Docker).
@@ -50,6 +52,11 @@ npm run build
 | `PAYMENT_WINDOW_MINUTES` | Checkout window shown to the customer; defaults to 30 |
 | `PORT` | HTTP port; defaults to 3000 |
 | `LOG_LEVEL` | Pino log level |
+| `CHORD_PROACTIVE_NOTIFICATIONS` | Enables automatic receipt delivery after webhook verification |
+| `CHORD_API_BASE_URL` | Chord API host; defaults to `https://api.chordhq.xyz` |
+| `CHORD_API_KEY` | Server-only key scoped to `thread:read` and `thread:write` |
+| `CHORD_WORKSPACE_ID` | Workspace whose external-chat threads are searched |
+| `CHORD_TEAMMATE_ID` | Jojo teammate whose checkout turns are eligible routes |
 
 Do not commit `.env`, Chord credentials, Paystack keys, customer data, or real phone numbers.
 
@@ -76,16 +83,15 @@ The active Chord teammate is **Jojo Gadgets Sales Assistant**. Its WhatsApp-styl
 1. Ask for a PS5. The teammate looks up the live row and quotes the new 825GB Disc Edition at ₦780,000.
 2. Agree to buy. The teammate sends the Paystack test link, reference, and payment-window expiry and explains that stock is allocated after verified payment.
 3. Send a fake payment screenshot without checking out. The teammate rejects it as evidence, verifies the reference, and reports that no successful payment exists.
-4. Pay through Paystack test checkout. The webhook automatically verifies and finalizes the exact reference. Because the simulator does not expose a documented server-initiated outbound-message route, say “Done, I’ve paid” to request the chat receipt; the teammate should return the already-confirmed order without allocating stock again.
-5. Choose pickup and give a preferred arrival time. The teammate records the preference and states that Uchenna must confirm it.
-6. Say “I’ve paid” again. Verification returns the stored paid order without changing inventory or calling Paystack again.
-7. Ask for the same PS5 as another demo customer and show that it is unavailable.
+4. Pay through Paystack test checkout and do not send another chat message. The webhook automatically verifies the exact reference, allocates stock once, and pushes the receipt into the same simulator conversation.
+5. Reply with pickup and an approximate arrival time, or request delivery and provide an area, recipient name, phone, and optional landmark. The teammate records the preference for owner confirmation and does not promise dispatch or a fee.
+6. Ask for the same item again. The teammate must perform a fresh stock check and report sold out if that purchase consumed the last unit.
 
 Use Paystack's currently documented test details from its official test-payments page. Do not put card data into the chat.
 
 ## Scope and limitations
 
-This demo verifies payments initiated through its Paystack checkout. It does not reconcile arbitrary bank transfers. Underpayment is detected and flagged for owner review. A delivery request can be recorded, but delivery pricing, availability, courier dispatch, and tracking are not automated. Paystack webhooks now update orders automatically, but proactive customer chat delivery remains disabled until Chord provides a documented outbound API carrying an exact conversation destination. Automated top-ups, refunds, trade-ins, live WhatsApp, and real owner notifications remain outside this build.
+This demo verifies payments initiated through its Paystack checkout. It does not reconcile arbitrary bank transfers. Underpayment is detected and flagged for owner review. A delivery request can be recorded, but delivery pricing, availability, courier dispatch, and tracking are not automated. Proactive receipts use Chord's operator-message API because the current public API has no agent-authored proactive message endpoint for an existing channel thread. Automated top-ups, refunds, trade-ins, live WhatsApp, and real owner notifications remain outside this build.
 
 Owner alerts are durable database records and structured logs. Customer copy therefore says “flagged for owner review,” not that a notification was delivered.
 

@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Logger } from 'pino';
+import type { PaidOrderNotifier } from '../chord/client.js';
 import type { DatabaseClient, DatabasePool } from '../db/pool.js';
 import { formatNaira, koboToNaira } from '../domain/money.js';
 import type { PaystackVerifyData, ProviderAttempt, SkuCondition } from '../domain/types.js';
@@ -62,7 +63,8 @@ export class CommerceService {
     private readonly provider: PaymentProvider,
     private readonly paymentWindowMinutes: number,
     private readonly logger: Logger,
-    private readonly now: () => Date = () => new Date()
+    private readonly now: () => Date = () => new Date(),
+    private readonly paidOrderNotifier?: PaidOrderNotifier
   ) {}
 
   async checkStock(input: {
@@ -396,6 +398,14 @@ export class CommerceService {
         const result = await this.verifyPayment(event.order_reference);
         if (result.status === 'verification_unavailable') {
           throw new Error('Provider verification remained unavailable');
+        }
+        if (result.status === 'paid' && this.paidOrderNotifier) {
+          const notification = await this.paidOrderNotifier.notifyPaid({
+            reference: event.order_reference,
+            item: String(result.item),
+            amountNgn: Number(result.amount_ngn)
+          });
+          this.logger.info({ reference: event.order_reference, notification }, 'processed proactive payment notification');
         }
         await this.pool.query(
           `UPDATE paystack_webhook_events
@@ -742,7 +752,7 @@ export class CommerceService {
       authorization_url: order.authorization_url,
       payment_expires_at: order.payment_expires_at.toISOString(),
       message_for_agent: order.authorization_url
-        ? `Send the checkout link and reference. State that the payment window ends at ${order.payment_expires_at.toISOString()}, stock is allocated only after verified payment, and the customer should say paid when done.`
+        ? `Send the checkout link and reference. State that the payment window ends at ${order.payment_expires_at.toISOString()} and stock is allocated only after verified payment. Say payment is confirmed automatically; the customer may say paid only to request an immediate fallback check.`
         : 'The checkout outcome is unresolved. Keep this reference and say the case was flagged for owner review; do not create another order.'
     };
   }

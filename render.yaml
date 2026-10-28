@@ -26,6 +26,16 @@ services:
         value: "false"
       - key: LOG_LEVEL
         value: info
+      - key: CHORD_PROACTIVE_NOTIFICATIONS
+        value: "true"
+      - key: CHORD_API_BASE_URL
+        value: https://api.chordhq.xyz
+      - key: CHORD_API_KEY
+        sync: false
+      - key: CHORD_WORKSPACE_ID
+        value: ws-e923ea40-e9ce-4dd6-bc51-76153e6e56f0
+      - key: CHORD_TEAMMATE_ID
+        value: e2560ec0-ccea-45ab-8889-ea09bfdfb59e
 
 databases:
   - name: jojo-gadgets-db
