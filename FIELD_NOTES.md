@@ -42,6 +42,29 @@ Add a factual entry whenever the build, documentation, simulator, or provider be
 - **Fix or workaround:** Published a stricter skill style policy: plain WhatsApp text only, no Markdown syntax, exact quantities and inventory history remain internal, positive stock is described only as available, and zero stock is described as sold out. Every new purchase request must perform a fresh stock lookup. A follow-up confirmed the plain formatting and sold-out state, but the teammate still said the customer had bought the “last one” and unnecessarily repeated the prior payment details; the next revision explicitly prohibited both behaviors.
 - **What Chord should change:** Document the simulator's supported message formatting and provide a channel-aware rendering preview or lint warning when teammate output contains unsupported Markdown.
 
+## Owner-review wording triggered a platform handoff instead of the delivery tool
+
+- **When:** Paid delivery-request test in the WhatsApp simulator, 28 October 2026
+- **What happened:** After a verified iPhone payment, the customer supplied a delivery area, recipient, phone number, and landmark. Instead of calling `capture_fulfillment_preference`, the teammate replied “One moment — connecting you with a teammate.” The simulator then showed no reply for the next message.
+- **How I found the cause:** Opened the same customer conversation in Chord after the simulator remained silent. The dashboard showed “You are driving this conversation — the AI is paused” and a **Hand back to AI** control. No fulfilment-tool trace existed for the delivery turn, confirming that Chord had converted the skill's “owner review” language into a platform handoff before the custom tool ran.
+- **Fix or workaround:** Revised the skill to make paid delivery capture a mandatory tool action, explicitly prohibited platform handoff or “connecting you” language, and clarified that the tool's durable owner-review record is the handoff for this demo. Published skill v6 and handed the conversation back to AI before retrying the idempotent capture.
+- **What Chord should change:** Expose handoff as an explicit skill/tool action rather than inferring it from phrases such as “owner review,” or show a pre-publish warning when instructions may trigger automatic takeover. The simulator should also say that the AI is paused instead of the ambiguous “No reply yet.”
+
+## MCP discovery showed a new tool that the agent was not allowed to call
+
+- **When:** Delivery-flow recovery test in the WhatsApp simulator, 28 October 2026
+- **What happened:** Chord's MCP tools view discovered all four server tools, including `capture_fulfillment_preference`, but the teammate said the delivery-recording step was unavailable. The server connection's **Allowed tools** field still contained only `check_stock_and_quote`, `create_payment`, and `verify_payment`.
+- **How I found the cause:** Compared the workspace-level discovered-tool list with the MCP connection edit form. Discovery correctly displayed the fourth tool, while the explicit allowlist silently excluded it from the agent.
+- **Fix or workaround:** Added `capture_fulfillment_preference` to the existing allowlist without changing the URL or credentials. A same-conversation retry then recorded reference `GDG-20261028-Z6JCMUGW` for owner review and clearly stated that delivery availability, fee, and timing were not confirmed. The Chord balance remained at 48 credits.
+- **What Chord should change:** Flag discovered-but-blocked tools in the tools view, or show the effective exposed-tool list beside the discovered list. When an MCP server gains a tool, warn that an explicit allowlist must be updated.
+
+## Broad inventory reply completed in Chord but timed out in the simulator
+
+- **When:** Pre-purchase catalogue test in the WhatsApp simulator, 28 October 2026
+- **What happened:** A single message asked for phones, laptops, and PlayStation availability. The simulator reported that the agent did not answer, but the completed AI reply was visible in the matching Chord dashboard conversation.
+- **Fix or workaround:** Split catalogue exploration into short, category-specific questions. Phone and laptop searches then returned correctly, while the sold-out PlayStation request was handled without exposing internal stock counts.
+- **What Chord should change:** Distinguish a channel-delivery timeout from an agent-generation failure, surface completed late replies in the simulator, and avoid charging or encouraging a retry when the dashboard already has a valid response.
+
 ## Entry template
 
 - **When:** Step and timestamp
