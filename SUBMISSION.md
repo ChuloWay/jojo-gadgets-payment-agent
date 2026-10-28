@@ -1,5 +1,14 @@
 # TSG Labs Build Exercise submission draft
 
+## Live deliverables
+
+- **Chord teammate:** Jojo Gadgets Sales Assistant (active)
+- **WhatsApp simulator:** https://chat.tsglabs.dev/c/mtCZAUYzJrF20Zr9xnLZxwO0
+- **MCP endpoint:** https://jojo-gadgets-payment-agent.onrender.com/mcp
+- **Service health:** https://jojo-gadgets-payment-agent.onrender.com/healthz
+- **Repository:** https://github.com/ChuloWay/jojo-gadgets-payment-agent
+- **Recording:** Add the final three-minute recording link after the credit-efficient demo run
+
 ## Role preference
 
 Forward-deployed Engineering and Technical Product Management.

@@ -59,12 +59,14 @@ The Blueprint selects Render's free demo plans. These are suitable for this asse
 
 The assessment deployment is live at `https://jojo-gadgets-payment-agent.onrender.com`. Its MCP endpoint is `https://jojo-gadgets-payment-agent.onrender.com/mcp` and its health endpoint is `https://jojo-gadgets-payment-agent.onrender.com/healthz`.
 
+The active Chord teammate is **Jojo Gadgets Sales Assistant**. Its WhatsApp-style simulator link is `https://chat.tsglabs.dev/c/mtCZAUYzJrF20Zr9xnLZxwO0`.
+
 1. In Render, create a Blueprint from this repository and enter a **Paystack test** secret when prompted. Never use a live key for the exercise.
 2. Confirm `GET https://jojo-gadgets-payment-agent.onrender.com/healthz` returns `{"status":"ok"}`.
 3. In Chord, register `https://jojo-gadgets-payment-agent.onrender.com/mcp` as a Streamable HTTP MCP server using bearer authentication. Store the same value as `MCP_BEARER_TOKEN` in the connection.
-4. Run Chord tool discovery and health. Restrict `enabled_tools` to the three tool names above, then explicitly assign that MCP server to the teammate.
+4. Run Chord tool discovery and health and restrict the server's allowed tools to the three tool names above. Chord exposes enabled custom MCP servers to the teammate; confirm this from an actual teammate tool trace rather than expecting the connector in the built-in-tool switch list.
 5. Upload [skills/SKILL.md](skills/SKILL.md), mark it as Instructions, review, publish, and activate the teammate.
-6. Connect the external WhatsApp simulator application and run an in-app text test before spending credits on the recorded flow.
+6. Enable both the organization-wide **Allow approved apps** switch and the **Whatsapp Simulator** app, authorize the simulator, and create the chat link. One in-app text test confirmed the teammate could call the MCP quote tool; further conversation turns are reserved for the recorded flow to conserve credits.
 
 ## Demo script
 
