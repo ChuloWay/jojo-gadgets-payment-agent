@@ -27,7 +27,7 @@ services:
       - key: LOG_LEVEL
         value: info
       - key: CHORD_PROACTIVE_NOTIFICATIONS
-        value: "true"
+        value: "false"
       - key: CHORD_API_BASE_URL
         value: https://api.chordhq.xyz
       - key: CHORD_API_KEY
