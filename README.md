@@ -68,7 +68,7 @@ The Blueprint selects Render's free demo plans. These are suitable for this asse
 
 The assessment deployment is live at `https://jojo-gadgets-payment-agent.onrender.com`. Its MCP endpoint is `https://jojo-gadgets-payment-agent.onrender.com/mcp` and its health endpoint is `https://jojo-gadgets-payment-agent.onrender.com/healthz`.
 
-The active Chord teammate is **Jojo Gadgets Sales Assistant**. Its WhatsApp-style simulator link is `https://chat.tsglabs.dev/c/mtCZAUYzJrF20Zr9xnLZxwO0`.
+The active Chord teammate is **Jojo Gadgets Sales Assistant**. Its WhatsApp-style simulator link is `https://chat.tsglabs.dev/c/Qj7tFLNSBng9ENG9vc-dmrGS`.
 
 1. In Render, create a Blueprint from this repository and enter a **Paystack test** secret when prompted. Never use a live key for the exercise.
 2. Confirm `GET https://jojo-gadgets-payment-agent.onrender.com/healthz` returns `{"status":"ok"}`.
